@@ -2,15 +2,17 @@
 
 void StatusLed::begin() {
     pinMode(pin_, OUTPUT);
-    digitalWrite(pin_, LOW);
+    write(false);
     on_ = false;
 }
 
 void StatusLed::set(bool on) {
     if (on == on_) return;
-    digitalWrite(pin_, on ? HIGH : LOW);
+    write(on);
     on_ = on;
 }
+
+void StatusLed::write(bool on) { digitalWrite(pin_, (on != activeLow_) ? HIGH : LOW); }
 
 void StatusLed::flash(uint32_t count, uint32_t onMs, uint32_t offMs) {
     for (uint32_t i = 0; i < count; ++i) {

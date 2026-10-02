@@ -141,33 +141,4 @@ bool countPulses(Device& device, uint32_t expected, uint32_t timeoutMs) {
     return pass;
 }
 
-void standaloneSelfTest(Device& device) {
-    // 1. Three quick flashes: self-test starting.
-    device.led.flash(3, 100, 100);
-    delay(500);
-
-    // 2. Five laser blinks, with the LED blinking in step.
-    for (int i = 0; i < 5; ++i) {
-        device.laser.set(true);
-        device.led.set(true);
-        delay(250);
-        device.laser.set(false);
-        device.led.set(false);
-        delay(250);
-    }
-    delay(500);
-
-    // 3. Ten seconds of receiver monitoring: the LED follows the light.
-    const uint32_t start = millis();
-    while (millis() - start < 10000) {
-        device.updateInputs();
-        followSensor(device);
-    }
-    device.led.set(false);
-    delay(500);
-
-    // 4. One long flash: self-test finished.
-    device.led.flash(1, 1000, 0);
-}
-
 }  // namespace diagnostics

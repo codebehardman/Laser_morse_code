@@ -1,6 +1,6 @@
 # Laser Morse Code Transceiver
 
-Firmware for the ECE 198 laser transceiver: two identical NUCLEO-F401RE units
+Firmware for the ECE 198 laser transceiver: two identical STM32F103C8T6 units
 that talk to each other in Morse code over a visible laser beam, without any
 radio emissions (so they can be used inside the National Radio Quiet Zone).
 
@@ -8,11 +8,10 @@ Both units run the **same firmware**, and each one can both send and receive.
 
 ## Modes
 
-When a unit powers up, LD2 (the green LED on the Nucleo) gives a short
-blip every half second while it waits. The **first key press** chooses the
-mode:
+When a unit powers up, the on-board LED (PC13) gives a short blip every half
+second while it waits. The **first key press** chooses the mode:
 
-| Press | Mode | LD2 confirmation |
+| Press | Mode | LED confirmation |
 |-------|------|------------------|
 | Short (< 2 s) | **Morse code** | one long flash |
 | Hold ≥ 2 s    | **Serial terminal** | two long flashes (they start while you're still holding) |
@@ -21,14 +20,14 @@ The mode stays until you press reset or cut the power. Set both units to the
 same mode.
 
 ### Morse code mode
-- **Send:** the key turns the laser on while pressed. In the `usb_serial`
-  build, text typed in the console is also keyed out as Morse.
-- **Receive:** LD2 lights while the laser hits the phototransistor. In the
-  `usb_serial` build, the pulses are decoded to text in the console.
+- **Send:** the key turns the laser on while pressed. Text typed in the
+  serial console is also keyed out as Morse.
+- **Receive:** the LED lights while the laser hits the phototransistor, and
+  the pulses are decoded to text in the serial console.
 - Holding the key for more than 1.5 s keeps the laser on for aiming. The
   receiver ignores holds that long, so aiming never shows up as text.
 
-### Serial terminal mode (`usb_serial` build only)
+### Serial terminal mode
 A transparent link between two PCs: whatever is typed in one unit's serial
 terminal comes out byte-for-byte in the other unit's terminal, and the link
 works in both directions at once.
@@ -41,11 +40,7 @@ works in both directions at once.
   endings are shown correctly whether your terminal sends CR, LF or CRLF.
 - Holding the key keeps the laser on for aiming. The other unit sees this as
   a line break and prints nothing.
-- LD2 flashes when data arrives.
-
-In the `standalone` build there is no PC connection, so a long press runs
-the [hardware self-test](#self-test-standalone-build-long-press) and then
-enters Morse mode.
+- The LED flashes when data arrives.
 
 ## Repository layout
 
@@ -60,7 +55,7 @@ src/
     serial_mode.{hpp,cpp}   serial terminal mode
   commands.{hpp,cpp}      serial console commands (/help, /test, /wpm, ...)
   diagnostics.{hpp,cpp}   hardware tests: laser, sensor, button, link
-  console.{hpp,cpp}       USB serial I/O (no-ops in the standalone build)
+  console.{hpp,cpp}       serial console over the chip's USB port
   device.hpp              references to all modules, shared by commands/tests
   drivers/                laser, phototransistor, button, status LED drivers,
                           laser_uart: timer-interrupt serial link over the laser
@@ -78,43 +73,73 @@ Pins from the design-document schematic:
 
 | Part | Pin | Notes |
 |------|-----|-------|
-| Laser (via NPN transistor Q1) | PA1 (A1) | high = laser on |
-| Phototransistor + 47 kΩ pull-up | PA0 (A0) | low = light detected |
-| Key button to GND | PA2 (D1) | internal pull-up |
-| Status LED | PA5 (LD2, on board) | the only local indicator: received light, mode, self-test |
+| Laser (via NPN transistor Q1) | PA1 | high = laser on |
+| Phototransistor + pull-up resistor | PA0 | low = light detected. **Pull-up to 3.3 V, not 5 V** (see below) |
+| Key button to GND | PA2 | internal pull-up |
+| Status LED | PC13 (on board) | lights when PC13 is low |
+| USB | on-board connector | power + serial console |
 
-### PA2/PA3 vs. the USB serial port
+Keep PA11/PA12 (USB) and PA13/PA14 (SWD programming) free. To use different
+pins, add `-D LMC_PIN_...=Pxx` flags in `platformio.ini`. If your board's LED
+is elsewhere or lights when the pin is high, set `LMC_PIN_STATUS_LED` and
+`LMC_STATUS_LED_ACTIVE_LOW=0`.
 
-On the Nucleo board, **PA2 and PA3 are the ST-LINK USB serial (virtual COM
-port) lines**. With the button on PA2, the board cannot also talk to a PC.
-There are two build environments to choose from:
+## Flashing
 
-| Environment | Button | USB serial console |
-|-------------|--------|--------------------|
-| `standalone` (default) | PA2 | no: Morse mode only; key with the button, watch LD2 |
-| `usb_serial` | **PA4 (A2)** | yes: both modes, console, diagnostics |
+The F103C8T6 has no programmer built in, and its USB port can't be used for
+flashing until you've installed a bootloader. Flash it **once per board**
+using one of these:
 
-To use `usb_serial`, move the button wire from D1 to A2. To use another pin,
-edit the `-D LMC_PIN_BUTTON` flag in `platformio.ini`. The firmware won't
-compile if the serial console is enabled while the button is still on
-PA2/PA3.
+### Option A: ST-LINK V2 dongle (recommended)
 
-## Building and flashing
+Connect the dongle to the 4-pin SWD header at the end of the board:
 
-Install [PlatformIO](https://platformio.org/install) (the VS Code extension or
-`pip install platformio`), plug in the Nucleo, then:
+| ST-LINK | Board |
+|---------|-------|
+| SWDIO | DIO (PA13) |
+| SWCLK | CLK / DCLK (PA14) |
+| GND | GND |
+| 3.3V | 3.3 |
+
+Unplug the board's own USB cable while flashing (the dongle powers it), then:
 
 ```sh
-pio run -e standalone -t upload     # or: -e usb_serial
-pio device monitor -b 115200        # usb_serial only
+pio run -e bluepill -t upload
 ```
 
-Flash both units with the same environment.
+If the upload fails with "init mode failed", hold the board's RESET button,
+start the upload, and release RESET when OpenOCD starts printing. This is
+usually only needed the first time, if the factory demo firmware has turned
+off the SWD pins.
 
-## Using the serial console (`usb_serial`)
+### Option B: USB-serial adapter (3.3 V FTDI/CP2102/CH340)
 
-Open any serial terminal at **115200 baud** (this is the PC-to-board
-speed, separate from the 9600-baud laser link). In Morse mode, each line
+| Adapter | Board |
+|---------|-------|
+| TX | PA10 (RX1) |
+| RX | PA9 (TX1) |
+| GND | GND |
+| 3.3V | 3.3 |
+
+1. Move the **BOOT0** jumper to **1**, press RESET.
+2. Run `pio run -e bluepill_uart -t upload`.
+3. Move BOOT0 back to **0** and press RESET to run the firmware.
+
+### After flashing
+
+Plug the board's own USB connector into the PC. It shows up as a serial
+port (`/dev/cu.usbmodem*` on macOS, `COMx` on Windows). Open it with:
+
+```sh
+pio device monitor
+```
+
+Flash both units the same way.
+
+## Using the serial console
+
+Open the board's USB serial port in any terminal (the baud rate setting
+doesn't matter over USB; 115200 is fine). In Morse mode, each line
 you type is sent as Morse code when you press Enter. Received text shows up as `RX< ...`.
 
 ```
@@ -131,18 +156,7 @@ character goes over the link.
 
 ## Hardware tests
 
-### Self-test (`standalone` build, long press)
-
-In the `standalone` build, hold the key for 2 s at power-up:
-
-1. After the two confirmation flashes, LD2 flashes 3 times quickly: the
-   self-test is starting.
-2. The laser blinks 5 times, with LD2 blinking in step. Check the laser by eye.
-3. For the next 10 seconds LD2 follows the phototransistor. Point the other
-   unit's laser at it (hold its key) and LD2 should light up.
-4. One long (1 s) flash: the test is done, and the unit is now in Morse mode.
-
-### Console tests (`usb_serial`, Morse mode)
+### Console tests (Morse mode)
 
 | Command | What it checks |
 |---------|----------------|
@@ -178,11 +192,17 @@ patterns appear as `*`.
 
 ## Hardware notes
 
+- **USB not detected?** Many F103C8T6 boards have the wrong USB pull-up
+  resistor (R10 = 10 kΩ instead of 1.5 kΩ). Most PCs still work. If yours
+  doesn't, replace R10 or add 1.8 kΩ between PA12 and 3.3 V.
 - **Phototransistor speed in serial mode.** At 9600 baud each bit lasts
   104 µs. A phototransistor's switching time grows with its load resistor,
   and the 47 kΩ pull-up may be too slow at this speed. If serial mode drops
   bytes while Morse mode works, try a 4.7–10 kΩ pull-up (a lower value
   responds faster but needs more light). You can also lower
   `config::kLinkBaud` on both units.
+- **PA0 is not 5 V tolerant on the F103.** The schematic ties the
+  phototransistor's pull-up to 5 V; on this chip that pushes current into
+  PA0's protection diode. Connect the pull-up to **3.3 V** instead.
 - **Q1 base resistor.** The schematic seems to drive the laser transistor's
   base straight from PA1. Add a resistor of about 1 kΩ.

@@ -2,13 +2,10 @@
 
 #include <stddef.h>
 
-// USB serial console (ST-LINK virtual COM port). When the firmware is built
-// without LMC_USB_SERIAL every function is a no-op, so callers never need to
-// check whether the console exists.
+// Serial console over the STM32's own USB port (USB CDC virtual COM port).
 namespace console {
 
 void begin();
-bool enabled();
 
 void print(const char* text);
 void print(char c);

@@ -1,9 +1,10 @@
 #pragma once
 
-// Pin assignments and tunables for the NUCLEO-F401RE transceiver.
+// Pin assignments and tunables for the STM32F103C8T6 transceiver.
 //
 // Defaults match the schematic in the design document. Any value can be
 // overridden from platformio.ini with a build flag, e.g. -D LMC_PIN_BUTTON=PA4.
+// Avoid PA11/PA12 (USB) and PA13/PA14 (SWD programming).
 
 #include <Arduino.h>
 
@@ -12,7 +13,8 @@
 #define LMC_PIN_LASER PA1
 #endif
 
-// Phototransistor with 47k pull-up (low = light detected).
+// Phototransistor with pull-up resistor (low = light detected).
+// PA0 is NOT 5 V tolerant on the F103: tie the pull-up to 3.3 V, not 5 V.
 #ifndef LMC_PIN_SENSOR
 #define LMC_PIN_SENSOR PA0
 #endif
@@ -22,23 +24,14 @@
 #define LMC_PIN_BUTTON PA2
 #endif
 
-// On-board green LED (LD2): the only local indicator. Mirrors the receiver
-// (handy when aiming) and confirms the selected mode.
+// On-board LED (PC13 on Blue Pill boards): the only local indicator. Mirrors
+// the receiver (handy when aiming) and confirms the selected mode. On most
+// F103C8T6 boards it is wired to 3.3 V, so it lights when the pin is LOW.
 #ifndef LMC_PIN_STATUS_LED
-#define LMC_PIN_STATUS_LED LED_BUILTIN
+#define LMC_PIN_STATUS_LED PC13
 #endif
-
-// USB serial console through the ST-LINK virtual COM port.
-// The ST-LINK VCP uses PA2 (TX) and PA3 (RX), so it cannot be enabled while
-// the button is still wired to PA2.
-#ifndef LMC_USB_SERIAL
-#define LMC_USB_SERIAL 0
-#endif
-
-#if LMC_USB_SERIAL
-static_assert(LMC_PIN_BUTTON != PA2 && LMC_PIN_BUTTON != PA3,
-              "PA2/PA3 are the ST-LINK USB serial lines: move the button "
-              "(see README) or build the 'standalone' environment");
+#ifndef LMC_STATUS_LED_ACTIVE_LOW
+#define LMC_STATUS_LED_ACTIVE_LOW 1
 #endif
 
 // Hardware timer for the serial-terminal-mode laser link interrupt (not used
@@ -49,6 +42,8 @@ static_assert(LMC_PIN_BUTTON != PA2 && LMC_PIN_BUTTON != PA3,
 
 namespace config {
 
+// Ignored by USB CDC (it always runs at USB speed); kept for terminals
+// that insist on a baud rate.
 constexpr uint32_t kConsoleBaud = 115200;
 
 // Default transmit speed for text typed in the serial console.

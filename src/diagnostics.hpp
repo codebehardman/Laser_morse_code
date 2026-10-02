@@ -24,8 +24,4 @@ bool testButton(Device& device, uint32_t durationMs = 10000);
 void sendPulses(Device& device, uint32_t count = 100, uint32_t widthMs = 20);
 bool countPulses(Device& device, uint32_t expected = 100, uint32_t timeoutMs = 20000);
 
-// Self-test for the standalone build (no console): flashes LD2, blinks the
-// laser, then mirrors the phototransistor on LD2 for 10 seconds.
-void standaloneSelfTest(Device& device);
-
 }  // namespace diagnostics

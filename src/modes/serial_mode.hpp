@@ -6,7 +6,7 @@
 // Every byte typed into this unit's terminal is sent over the laser at
 // config::kLinkBaud (8E1), and every byte received is written unchanged to
 // this terminal. Bytes that fail the parity or framing check are dropped
-// instead of being shown wrong. LD2 flashes when data arrives.
+// instead of being shown wrong. The status LED flashes when data arrives.
 //
 // The key holds the laser on for aiming; the other unit ignores this.
 namespace serial_mode {

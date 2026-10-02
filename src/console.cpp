@@ -9,8 +9,6 @@
 
 namespace console {
 
-#if LMC_USB_SERIAL
-
 namespace {
 constexpr size_t kLineSize = 128;
 char lineBuffer[kLineSize];
@@ -18,8 +16,6 @@ size_t lineLength = 0;
 }  // namespace
 
 void begin() { Serial.begin(config::kConsoleBaud); }
-
-bool enabled() { return true; }
 
 void print(const char* text) { Serial.print(text); }
 
@@ -63,19 +59,5 @@ bool readLine(char* line, size_t size) {
     }
     return false;
 }
-
-#else  // !LMC_USB_SERIAL
-
-void begin() {}
-bool enabled() { return false; }
-void print(const char*) {}
-void print(char) {}
-void println(const char*) {}
-void printf(const char*, ...) {}
-bool readByte(char&) { return false; }
-void write(char) {}
-bool readLine(char*, size_t) { return false; }
-
-#endif
 
 }  // namespace console
