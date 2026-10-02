@@ -4,15 +4,47 @@ Firmware for the ECE 198 laser transceiver: two identical NUCLEO-F401RE units
 that talk to each other in Morse code over a visible laser beam, without any
 radio emissions (so they can be used inside the National Radio Quiet Zone).
 
-Both units run the **same firmware**. Each unit sends and receives:
+Both units run the **same firmware**, and each one can both send and receive.
 
-| Direction | How |
-|-----------|-----|
-| Send      | Press the key button (the laser stays on while it is pressed), or type text in the serial console and it is keyed out automatically |
-| Receive   | The buzzer and the green LED (LD2) follow the incoming light, and the pulses are decoded to text in the serial console |
+## Modes
 
-Holding the key for more than 1.5 s keeps the laser on for aiming. The
-receiver ignores holds that long, so aiming never shows up as text.
+When a unit powers up, LD2 (the green LED) blinks while it waits. The
+**first key press** chooses the mode:
+
+| Press | Mode | Confirmation |
+|-------|------|--------------|
+| Short (< 2 s) | **Morse code** | one beep |
+| Hold ≥ 2 s    | **Serial terminal** | two beeps (the second one sounds while you're still holding) |
+
+The mode stays until you press reset or cut the power. Set both units to the
+same mode.
+
+### Morse code mode
+- **Send:** the key turns the laser on while pressed. In the `usb_serial`
+  build, text typed in the console is also keyed out as Morse.
+- **Receive:** the buzzer and LD2 follow the incoming light. In the
+  `usb_serial` build, the pulses are decoded to text in the console.
+- Holding the key for more than 1.5 s keeps the laser on for aiming. The
+  receiver ignores holds that long, so aiming never shows up as text.
+
+### Serial terminal mode (`usb_serial` build only)
+A transparent link between two PCs: whatever is typed in one unit's serial
+terminal comes out byte-for-byte in the other unit's terminal, and the link
+works in both directions at once.
+- The laser link runs at **9600 baud, 8 data bits, even parity, 1 stop bit**,
+  as in the design document. A timer interrupt sends and receives the bits,
+  sampling 8 times per bit with a 3-sample majority vote in the middle.
+- A byte that fails the parity or stop-bit check is **dropped** rather than
+  shown wrong, and the receiving unit's buzzer chirps.
+- Your own typing is echoed locally (`config::kSerialLocalEcho`). Line
+  endings are shown correctly whether your terminal sends CR, LF or CRLF.
+- Holding the key keeps the laser on for aiming. The other unit sees this as
+  a line break and prints nothing.
+- LD2 flashes when data arrives.
+
+In the `standalone` build there is no PC connection, so a long press runs
+the [hardware self-test](#self-test-standalone-build-long-press) and then
+enters Morse mode.
 
 ## Repository layout
 
@@ -20,17 +52,23 @@ receiver ignores holds that long, so aiming never shows up as text.
 platformio.ini            build environments (firmware + PC unit tests)
 include/board_config.hpp  pin assignments and tunable constants
 src/
-  main.cpp                setup()/loop(): ties all the modules together
+  main.cpp                setup()/loop(): mode selection, then runs the mode
+  modes/
+    mode_select.{hpp,cpp}   power-up key press: short = Morse, long = serial
+    morse_mode.{hpp,cpp}    Morse code mode
+    serial_mode.{hpp,cpp}   serial terminal mode
   commands.{hpp,cpp}      serial console commands (/help, /test, /wpm, ...)
   diagnostics.{hpp,cpp}   hardware tests: laser, sensor, button, buzzer, link
   console.{hpp,cpp}       USB serial I/O (no-ops in the standalone build)
   device.hpp              references to all modules, shared by commands/tests
-  drivers/                laser, phototransistor, button, buzzer drivers
+  drivers/                laser, phototransistor, button, buzzer drivers,
+                          laser_uart: timer-interrupt serial link over the laser
 lib/morse/src/            hardware-independent Morse code library
   morse_code.{hpp,cpp}        ITU alphabet: A-Z, 0-9, punctuation
   morse_transmitter.{hpp,cpp} text -> laser on/off timing (non-blocking)
   morse_decoder.{hpp,cpp}     light timing -> text, adapts to the sender's speed
-test/test_morse/          unit tests for lib/morse, run on your PC
+lib/optical_uart/src/     hardware-independent 8E1 software UART framing
+test/                     unit tests for both libraries, run on your PC
 ```
 
 ## Wiring
@@ -53,8 +91,8 @@ talk to a PC. There are two build environments to choose from:
 
 | Environment | Button | Buzzer | USB serial console |
 |-------------|--------|--------|--------------------|
-| `standalone` (default) | PA2 | PA3 | no: key with the button, listen on the buzzer |
-| `usb_serial` | **PA4 (A2)** | **PB0 (A3)** | yes: type text, see decoded text, run tests |
+| `standalone` (default) | PA2 | PA3 | no: Morse mode only; key with the button, listen on the buzzer |
+| `usb_serial` | **PA4 (A2)** | **PB0 (A3)** | yes: both modes, console, diagnostics |
 
 To use `usb_serial`, move the button wire from D1 to A2 and the buzzer wire
 from D0 to A3. To use other pins, edit the `-D LMC_PIN_...` flags in
@@ -75,8 +113,9 @@ Flash both units with the same environment.
 
 ## Using the serial console (`usb_serial`)
 
-Open any serial terminal at **115200 baud**. Each line you type is sent as
-Morse code when you press Enter. Received text shows up as `RX< ...`.
+Open any serial terminal at **115200 baud** (this is the PC-to-board
+speed, separate from the 9600-baud laser link). In Morse mode, each line
+you type is sent as Morse code when you press Enter. Received text shows up as `RX< ...`.
 
 ```
 /help               list commands
@@ -88,21 +127,22 @@ Morse code when you press Enter. Received text shows up as `RX< ...`.
 /table              print the Morse alphabet
 ```
 
+These commands only work in Morse mode. In serial terminal mode every
+character goes over the link.
+
 ## Hardware tests
 
-### Self-test at power-up (both builds)
+### Self-test (`standalone` build, long press)
 
-Hold the key button while pressing reset (black button on the Nucleo):
+In the `standalone` build, hold the key for 2 s at power-up:
 
-1. The buzzer beeps (two short beeps in `standalone`).
+1. Two short beeps.
 2. The laser blinks 5 times. Check it by eye.
 3. For 10 seconds the buzzer and LD2 follow the phototransistor. Point the
    other unit's laser at it (hold its key) and listen for the buzzer.
-4. One long beep: the test is done.
+4. One long beep: the test is done, and the unit is now in Morse mode.
 
-With `usb_serial`, the results are also printed to the console.
-
-### Console tests (`usb_serial`)
+### Console tests (`usb_serial`, Morse mode)
 
 | Command | What it checks |
 |---------|----------------|
@@ -122,9 +162,12 @@ interference (Test 3, lamp at 1 m) checks from the design document.
 pio test -e native
 ```
 
-These check the Morse alphabet tables, the transmitter's exact timing, and
-transmitter → decoder loopback, including speed mismatch, ±20% human timing
-jitter, aim holds and unknown patterns.
+- **Morse:** the alphabet tables, the transmitter's exact timing, and
+  transmitter → decoder loopback, including speed mismatch, ±20% human timing
+  jitter, aim holds and unknown patterns.
+- **Serial link:** frame layout, all 256 byte values, any sampling phase,
+  ±3% clock mismatch, detection of a flipped bit, glitches, and a held-on
+  laser.
 
 ## Morse timing
 
@@ -133,3 +176,17 @@ dash = 3, gap between elements = 1, between letters = 3, between words = 7.
 The decoder estimates the sender's unit from the incoming marks, so people
 keying at different speeds are decoded without any setup. Undecodable
 patterns appear as `*`.
+
+## Hardware notes
+
+- **Phototransistor speed in serial mode.** At 9600 baud each bit lasts
+  104 µs. A phototransistor's switching time grows with its load resistor,
+  and the 47 kΩ pull-up may be too slow at this speed. If serial mode drops
+  bytes while Morse mode works, try a 4.7–10 kΩ pull-up (a lower value
+  responds faster but needs more light). You can also lower
+  `config::kLinkBaud` on both units.
+- **Q1 base resistor.** The schematic seems to drive the laser transistor's
+  base straight from PA1. Add a resistor of about 1 kΩ.
+- **Buzzer current.** The energy analysis lists 35 mA for the buzzer, but an
+  STM32 pin is rated for 25 mA. Consider driving the buzzer through a
+  transistor.

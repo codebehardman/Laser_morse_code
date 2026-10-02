@@ -36,6 +36,14 @@ void printf(const char* format, ...) {
     Serial.print(buffer);
 }
 
+bool readByte(char& c) {
+    if (Serial.available() <= 0) return false;
+    c = static_cast<char>(Serial.read());
+    return true;
+}
+
+void write(char c) { Serial.write(static_cast<uint8_t>(c)); }
+
 bool readLine(char* line, size_t size) {
     while (Serial.available() > 0) {
         const char c = static_cast<char>(Serial.read());
@@ -64,6 +72,8 @@ void print(const char*) {}
 void print(char) {}
 void println(const char*) {}
 void printf(const char*, ...) {}
+bool readByte(char&) { return false; }
+void write(char) {}
 bool readLine(char*, size_t) { return false; }
 
 #endif

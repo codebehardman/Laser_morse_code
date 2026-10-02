@@ -46,6 +46,12 @@ static_assert(LMC_PIN_BUTTON != PA2 && LMC_PIN_BUTTON != PA3 && LMC_PIN_BUZZER !
               "(see README) or build the 'standalone' environment");
 #endif
 
+// Hardware timer for the serial-terminal-mode laser link interrupt (not used
+// by the Arduino core).
+#ifndef LMC_LINK_TIMER
+#define LMC_LINK_TIMER TIM2
+#endif
+
 namespace config {
 
 constexpr uint32_t kConsoleBaud = 115200;
@@ -61,5 +67,16 @@ constexpr uint32_t kSensorDebounceMs = 3;
 
 // Print a newline in the console after this much receive silence.
 constexpr uint32_t kMessageEndMs = 3000;
+
+// Mode selection: the first key press after power-up picks the mode.
+// Shorter than this = Morse mode, held at least this long = serial terminal.
+constexpr uint32_t kModeSelectHoldMs = 2000;
+
+// Serial terminal mode: laser link speed (8E1 framing, as in the design doc).
+constexpr uint32_t kLinkBaud = 9600;
+
+// Serial terminal mode: show what you type in your own terminal too, since
+// most terminals don't echo locally.
+constexpr bool kSerialLocalEcho = true;
 
 }  // namespace config

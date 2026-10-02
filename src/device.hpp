@@ -3,6 +3,7 @@
 #include "drivers/button.hpp"
 #include "drivers/buzzer.hpp"
 #include "drivers/laser.hpp"
+#include "drivers/laser_uart.hpp"
 #include "drivers/photo_sensor.hpp"
 #include "morse_decoder.hpp"
 #include "morse_transmitter.hpp"
@@ -17,6 +18,7 @@ struct Settings {
 // Everything the command handler and diagnostics need access to.
 struct Device {
     Laser& laser;
+    LaserUart& link;  // serial terminal mode only
     PhotoSensor& sensor;
     Button& button;
     Buzzer& buzzer;
