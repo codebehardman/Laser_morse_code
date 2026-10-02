@@ -1,17 +1,16 @@
 #pragma once
 
 #include "drivers/button.hpp"
-#include "drivers/buzzer.hpp"
 #include "drivers/laser.hpp"
 #include "drivers/laser_uart.hpp"
 #include "drivers/photo_sensor.hpp"
+#include "drivers/status_led.hpp"
 #include "morse_decoder.hpp"
 #include "morse_transmitter.hpp"
 
 // User-adjustable runtime settings.
 struct Settings {
     uint32_t wpm;
-    bool sidetone;  // beep locally while transmitting
     bool aim;       // hold the laser on continuously for alignment
 };
 
@@ -21,7 +20,7 @@ struct Device {
     LaserUart& link;  // serial terminal mode only
     PhotoSensor& sensor;
     Button& button;
-    Buzzer& buzzer;
+    StatusLed& led;
     morse::MorseTransmitter& transmitter;
     morse::MorseDecoder& decoder;
     Settings& settings;

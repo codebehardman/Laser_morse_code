@@ -4,8 +4,8 @@
 // After power-up the first key press selects the mode:
 //
 //   Short press  -> Morse code mode (modes/morse_mode.cpp)
-//                   The key turns the laser on, the buzzer follows the
-//                   received light, and received Morse is decoded to text.
+//                   The key turns the laser on, LD2 follows the received
+//                   light, and received Morse is decoded to text.
 //   Hold >= 2 s  -> Serial terminal mode (modes/serial_mode.cpp)
 //                   Whatever is typed in one unit's serial terminal appears
 //                   in the other's, sent at 9600 baud over the laser.
@@ -30,13 +30,13 @@ Laser laser(LMC_PIN_LASER);
 LaserUart link(LMC_PIN_LASER, LMC_PIN_SENSOR, LMC_LINK_TIMER);
 PhotoSensor sensor(LMC_PIN_SENSOR, config::kSensorDebounceMs);
 Button button(LMC_PIN_BUTTON, config::kButtonDebounceMs);
-Buzzer buzzer(LMC_PIN_BUZZER);
+StatusLed led(LMC_PIN_STATUS_LED);
 
 morse::MorseTransmitter transmitter(morse::wpmToUnitMs(config::kDefaultWpm));
 morse::MorseDecoder decoder(morse::wpmToUnitMs(config::kDefaultWpm));
 
-Settings settings{config::kDefaultWpm, /*sidetone=*/false, /*aim=*/false};
-Device device{laser, link, sensor, button, buzzer, transmitter, decoder, settings};
+Settings settings{config::kDefaultWpm, /*aim=*/false};
+Device device{laser, link, sensor, button, led, transmitter, decoder, settings};
 
 Mode mode = Mode::Morse;
 
@@ -44,10 +44,9 @@ Mode mode = Mode::Morse;
 
 void setup() {
     laser.begin();
-    buzzer.begin();
+    led.begin();
     sensor.begin();
     button.begin();
-    pinMode(LMC_PIN_STATUS_LED, OUTPUT);
     console::begin();
 
     console::println();

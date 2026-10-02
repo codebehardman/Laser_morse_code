@@ -3,7 +3,7 @@
 // Pin assignments and tunables for the NUCLEO-F401RE transceiver.
 //
 // Defaults match the schematic in the design document. Any value can be
-// overridden from platformio.ini with a build flag, e.g. -D LMC_PIN_BUZZER=PB0.
+// overridden from platformio.ini with a build flag, e.g. -D LMC_PIN_BUTTON=PA4.
 
 #include <Arduino.h>
 
@@ -22,27 +22,22 @@
 #define LMC_PIN_BUTTON PA2
 #endif
 
-// Active buzzer (high = sounding).
-#ifndef LMC_PIN_BUZZER
-#define LMC_PIN_BUZZER PA3
-#endif
-
-// On-board green LED (LD2): mirrors the receiver, handy when aiming.
+// On-board green LED (LD2): the only local indicator. Mirrors the receiver
+// (handy when aiming) and confirms the selected mode.
 #ifndef LMC_PIN_STATUS_LED
 #define LMC_PIN_STATUS_LED LED_BUILTIN
 #endif
 
 // USB serial console through the ST-LINK virtual COM port.
 // The ST-LINK VCP uses PA2 (TX) and PA3 (RX), so it cannot be enabled while
-// the button or buzzer are still wired to those pins.
+// the button is still wired to PA2.
 #ifndef LMC_USB_SERIAL
 #define LMC_USB_SERIAL 0
 #endif
 
 #if LMC_USB_SERIAL
-static_assert(LMC_PIN_BUTTON != PA2 && LMC_PIN_BUTTON != PA3 && LMC_PIN_BUZZER != PA2 &&
-                  LMC_PIN_BUZZER != PA3,
-              "PA2/PA3 are the ST-LINK USB serial lines: move the button/buzzer "
+static_assert(LMC_PIN_BUTTON != PA2 && LMC_PIN_BUTTON != PA3,
+              "PA2/PA3 are the ST-LINK USB serial lines: move the button "
               "(see README) or build the 'standalone' environment");
 #endif
 

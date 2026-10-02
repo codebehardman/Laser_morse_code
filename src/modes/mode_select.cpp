@@ -5,15 +5,13 @@
 
 namespace {
 
-constexpr uint32_t kBlinkPeriodMs = 500;
-constexpr uint32_t kBeepMs = 150;
+// While waiting: a short blip every half second.
+constexpr uint32_t kWaitBlinkPeriodMs = 500;
+constexpr uint32_t kWaitBlinkOnMs = 50;
 
-void confirmBeeps(Device& device, int count) {
-    for (int i = 0; i < count; ++i) {
-        if (i > 0) delay(kBeepMs);
-        device.buzzer.beep(kBeepMs);
-    }
-}
+// Confirmation: long flashes, clearly different from the waiting blips.
+constexpr uint32_t kConfirmOnMs = 400;
+constexpr uint32_t kConfirmOffMs = 300;
 
 }  // namespace
 
@@ -32,7 +30,7 @@ Mode selectMode(Device& device) {
     while (true) {
         const uint32_t now = millis();
         device.button.update(now);
-        digitalWrite(LMC_PIN_STATUS_LED, (now / (kBlinkPeriodMs / 2)) % 2 ? HIGH : LOW);
+        device.led.set(now % kWaitBlinkPeriodMs < kWaitBlinkOnMs);
 
         if (device.button.pressed()) {
             if (!pressing) {
@@ -48,8 +46,9 @@ Mode selectMode(Device& device) {
         }
     }
 
-    digitalWrite(LMC_PIN_STATUS_LED, LOW);
-    confirmBeeps(device, mode == Mode::Morse ? 1 : 2);
+    device.led.set(false);
+    delay(kConfirmOffMs);
+    device.led.flash(mode == Mode::Morse ? 1 : 2, kConfirmOnMs, kConfirmOffMs);
 
     // Don't let the selecting press leak into the chosen mode.
     while (device.button.pressed()) device.button.update(millis());

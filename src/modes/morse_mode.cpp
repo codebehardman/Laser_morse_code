@@ -53,8 +53,7 @@ void update(Device& device) {
     // Receive.
     const bool light = device.sensor.lightDetected();
     device.decoder.update(light, now);
-    device.buzzer.set(light || (device.settings.sidetone && keyDown));
-    digitalWrite(LMC_PIN_STATUS_LED, light ? HIGH : LOW);
+    device.led.set(light);
 
     printReceived(device, now);
 }

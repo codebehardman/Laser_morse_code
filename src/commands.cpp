@@ -53,7 +53,6 @@ void printStatus(Device& device) {
     console::printf("RX unit    : %lu ms (adaptive, ~%lu WPM)\n",
                     static_cast<unsigned long>(device.decoder.unitMs()),
                     static_cast<unsigned long>(1200 / device.decoder.unitMs()));
-    console::printf("Sidetone   : %s\n", device.settings.sidetone ? "on" : "off");
     console::printf("Aim mode   : %s\n", device.settings.aim ? "on" : "off");
     console::printf("Receiver   : %s\n", device.sensor.lightDetected() ? "LIGHT" : "dark");
     console::printf("TX queue   : %s\n", device.transmitter.busy() ? "sending" : "idle");
@@ -79,19 +78,16 @@ void runTest(Device& device, size_t argc, char* argv[]) {
         diagnostics::testSensor(device);
     } else if (strcmp(which, "button") == 0) {
         diagnostics::testButton(device);
-    } else if (strcmp(which, "buzzer") == 0) {
-        diagnostics::testBuzzer(device);
     } else if (strcmp(which, "tx") == 0) {
         diagnostics::sendPulses(device, parseNumber(argc > 2 ? argv[2] : nullptr, 100));
     } else if (strcmp(which, "rx") == 0) {
         diagnostics::countPulses(device, parseNumber(argc > 2 ? argv[2] : nullptr, 100));
     } else if (strcmp(which, "all") == 0) {
-        diagnostics::testBuzzer(device);
         diagnostics::testLaser(device);
         diagnostics::testButton(device);
         diagnostics::testSensor(device);
     } else {
-        console::println("Usage: /test laser|sensor|button|buzzer|all|tx [n]|rx [n]");
+        console::println("Usage: /test laser|sensor|button|all|tx [n]|rx [n]");
         return;
     }
     // Anything the decoder picked up during a test is noise for the chat.
@@ -106,15 +102,13 @@ void printHelp() {
     console::println("  /help               this help");
     console::println("  /status             show settings and receiver state");
     console::println("  /wpm <n>            transmit speed in words per minute (5-30)");
-    console::println("  /sidetone on|off    beep locally while transmitting");
     console::println("  /aim on|off         hold the laser on to align the two units");
     console::println("  /stop               abort the current transmission");
     console::println("  /table              print the Morse alphabet");
     console::println("  /test laser         blink the laser 5 times");
     console::println("  /test sensor        report light/dark changes for 10 s");
     console::println("  /test button        report key presses for 10 s");
-    console::println("  /test buzzer        beep pattern");
-    console::println("  /test all           buzzer, laser, button and sensor tests");
+    console::println("  /test all           laser, button and sensor tests");
     console::println("  /test rx [n]        link test: count pulses from the other unit");
     console::println("  /test tx [n]        link test: send n pulses (run rx on the other unit first)");
 }
@@ -150,10 +144,6 @@ void handleLine(Device& device, const char* line) {
     } else if (strcmp(cmd, "wpm") == 0) {
         applyWpm(device, parseNumber(argc > 1 ? argv[1] : nullptr, device.settings.wpm));
         console::printf("TX speed set to %lu WPM\n", static_cast<unsigned long>(device.settings.wpm));
-    } else if (strcmp(cmd, "sidetone") == 0) {
-        if (!parseOnOff(argc > 1 ? argv[1] : nullptr, device.settings.sidetone)) {
-            console::println("Usage: /sidetone on|off");
-        }
     } else if (strcmp(cmd, "aim") == 0) {
         if (!parseOnOff(argc > 1 ? argv[1] : nullptr, device.settings.aim)) {
             console::println("Usage: /aim on|off");
@@ -165,7 +155,7 @@ void handleLine(Device& device, const char* line) {
         printMorseTable();
     } else if (strcmp(cmd, "test") == 0) {
         device.laser.set(false);
-        device.buzzer.set(false);
+        device.led.set(false);
         runTest(device, argc, argv);
     } else {
         console::printf("Unknown command '/%s' - type /help\n", cmd);

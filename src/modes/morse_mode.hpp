@@ -2,8 +2,8 @@
 
 #include "../device.hpp"
 
-// Morse code mode: the key drives the laser directly, the buzzer and LD2
-// follow the received light, received Morse is decoded to the console, and
+// Morse code mode: the key drives the laser directly, LD2 follows the
+// received light, received Morse is decoded to the console, and
 // console lines are sent as Morse (lines starting with '/' are commands).
 namespace morse_mode {
 

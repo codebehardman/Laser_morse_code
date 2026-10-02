@@ -8,13 +8,14 @@ Both units run the **same firmware**, and each one can both send and receive.
 
 ## Modes
 
-When a unit powers up, LD2 (the green LED) blinks while it waits. The
-**first key press** chooses the mode:
+When a unit powers up, LD2 (the green LED on the Nucleo) gives a short
+blip every half second while it waits. The **first key press** chooses the
+mode:
 
-| Press | Mode | Confirmation |
-|-------|------|--------------|
-| Short (< 2 s) | **Morse code** | one beep |
-| Hold ≥ 2 s    | **Serial terminal** | two beeps (the second one sounds while you're still holding) |
+| Press | Mode | LD2 confirmation |
+|-------|------|------------------|
+| Short (< 2 s) | **Morse code** | one long flash |
+| Hold ≥ 2 s    | **Serial terminal** | two long flashes (they start while you're still holding) |
 
 The mode stays until you press reset or cut the power. Set both units to the
 same mode.
@@ -22,7 +23,7 @@ same mode.
 ### Morse code mode
 - **Send:** the key turns the laser on while pressed. In the `usb_serial`
   build, text typed in the console is also keyed out as Morse.
-- **Receive:** the buzzer and LD2 follow the incoming light. In the
+- **Receive:** LD2 lights while the laser hits the phototransistor. In the
   `usb_serial` build, the pulses are decoded to text in the console.
 - Holding the key for more than 1.5 s keeps the laser on for aiming. The
   receiver ignores holds that long, so aiming never shows up as text.
@@ -35,7 +36,7 @@ works in both directions at once.
   as in the design document. A timer interrupt sends and receives the bits,
   sampling 8 times per bit with a 3-sample majority vote in the middle.
 - A byte that fails the parity or stop-bit check is **dropped** rather than
-  shown wrong, and the receiving unit's buzzer chirps.
+  shown wrong.
 - Your own typing is echoed locally (`config::kSerialLocalEcho`). Line
   endings are shown correctly whether your terminal sends CR, LF or CRLF.
 - Holding the key keeps the laser on for aiming. The other unit sees this as
@@ -58,10 +59,10 @@ src/
     morse_mode.{hpp,cpp}    Morse code mode
     serial_mode.{hpp,cpp}   serial terminal mode
   commands.{hpp,cpp}      serial console commands (/help, /test, /wpm, ...)
-  diagnostics.{hpp,cpp}   hardware tests: laser, sensor, button, buzzer, link
+  diagnostics.{hpp,cpp}   hardware tests: laser, sensor, button, link
   console.{hpp,cpp}       USB serial I/O (no-ops in the standalone build)
   device.hpp              references to all modules, shared by commands/tests
-  drivers/                laser, phototransistor, button, buzzer drivers,
+  drivers/                laser, phototransistor, button, status LED drivers,
                           laser_uart: timer-interrupt serial link over the laser
 lib/morse/src/            hardware-independent Morse code library
   morse_code.{hpp,cpp}        ITU alphabet: A-Z, 0-9, punctuation
@@ -80,24 +81,23 @@ Pins from the design-document schematic:
 | Laser (via NPN transistor Q1) | PA1 (A1) | high = laser on |
 | Phototransistor + 47 kΩ pull-up | PA0 (A0) | low = light detected |
 | Key button to GND | PA2 (D1) | internal pull-up |
-| Active buzzer | PA3 (D0) | high = sounding |
-| Status LED | PA5 (LD2, on board) | follows the receiver |
+| Status LED | PA5 (LD2, on board) | the only local indicator: received light, mode, self-test |
 
 ### PA2/PA3 vs. the USB serial port
 
 On the Nucleo board, **PA2 and PA3 are the ST-LINK USB serial (virtual COM
-port) lines**. With the button and buzzer on those pins, the board cannot also
-talk to a PC. There are two build environments to choose from:
+port) lines**. With the button on PA2, the board cannot also talk to a PC.
+There are two build environments to choose from:
 
-| Environment | Button | Buzzer | USB serial console |
-|-------------|--------|--------|--------------------|
-| `standalone` (default) | PA2 | PA3 | no: Morse mode only; key with the button, listen on the buzzer |
-| `usb_serial` | **PA4 (A2)** | **PB0 (A3)** | yes: both modes, console, diagnostics |
+| Environment | Button | USB serial console |
+|-------------|--------|--------------------|
+| `standalone` (default) | PA2 | no: Morse mode only; key with the button, watch LD2 |
+| `usb_serial` | **PA4 (A2)** | yes: both modes, console, diagnostics |
 
-To use `usb_serial`, move the button wire from D1 to A2 and the buzzer wire
-from D0 to A3. To use other pins, edit the `-D LMC_PIN_...` flags in
-`platformio.ini`. The firmware won't compile if the serial console is enabled
-while the button or buzzer is still on PA2/PA3.
+To use `usb_serial`, move the button wire from D1 to A2. To use another pin,
+edit the `-D LMC_PIN_BUTTON` flag in `platformio.ini`. The firmware won't
+compile if the serial console is enabled while the button is still on
+PA2/PA3.
 
 ## Building and flashing
 
@@ -121,7 +121,6 @@ you type is sent as Morse code when you press Enter. Received text shows up as `
 /help               list commands
 /status             settings, receiver state, decoder speed estimate
 /wpm <n>            transmit speed, 5-30 words per minute (default 12)
-/sidetone on|off    beep locally while transmitting
 /aim on|off         hold the laser on to align the units
 /stop               abort the current transmission
 /table              print the Morse alphabet
@@ -136,11 +135,12 @@ character goes over the link.
 
 In the `standalone` build, hold the key for 2 s at power-up:
 
-1. Two short beeps.
-2. The laser blinks 5 times. Check it by eye.
-3. For 10 seconds the buzzer and LD2 follow the phototransistor. Point the
-   other unit's laser at it (hold its key) and listen for the buzzer.
-4. One long beep: the test is done, and the unit is now in Morse mode.
+1. After the two confirmation flashes, LD2 flashes 3 times quickly: the
+   self-test is starting.
+2. The laser blinks 5 times, with LD2 blinking in step. Check the laser by eye.
+3. For the next 10 seconds LD2 follows the phototransistor. Point the other
+   unit's laser at it (hold its key) and LD2 should light up.
+4. One long (1 s) flash: the test is done, and the unit is now in Morse mode.
 
 ### Console tests (`usb_serial`, Morse mode)
 
@@ -149,7 +149,6 @@ In the `standalone` build, hold the key for 2 s at power-up:
 | `/test laser`  | Blinks the laser 5 times. If you reflect the beam back with a mirror, it also counts the pulses at its own sensor |
 | `/test sensor` | Prints every light/dark change for 10 s with timings. Use it to check aim and ambient-light interference |
 | `/test button` | Prints key presses for 10 s |
-| `/test buzzer` | Beep pattern |
 | `/test all`    | All of the above |
 | `/test rx` then `/test tx` | **Link test across two units.** Run `/test rx` on the receiving unit first, then `/test tx` on the sending unit. The sender transmits 100 pulses of 20 ms. The receiver reports how many arrived and their widths, and gives PASS if the error rate is ≤ 10% (the design requirement) |
 
@@ -187,6 +186,3 @@ patterns appear as `*`.
   `config::kLinkBaud` on both units.
 - **Q1 base resistor.** The schematic seems to drive the laser transistor's
   base straight from PA1. Add a resistor of about 1 kΩ.
-- **Buzzer current.** The energy analysis lists 35 mA for the buzzer, but an
-  STM32 pin is rated for 25 mA. Consider driving the buzzer through a
-  transistor.

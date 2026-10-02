@@ -7,11 +7,8 @@ namespace serial_mode {
 namespace {
 
 constexpr uint32_t kActivityLedMs = 30;
-constexpr uint32_t kErrorChirpMs = 30;
 
 uint32_t ledOffAtMs = 0;
-uint32_t buzzerOffAtMs = 0;
-uint32_t lastParityErrors = 0;
 
 // Terminals disagree on line endings (CR, LF or CRLF). The bytes on the link
 // are left untouched; only what is printed locally is normalised to CRLF so
@@ -65,21 +62,10 @@ void update(Device& device) {
     uint8_t byte;
     while (device.link.read(byte)) {
         receiveWriter.write(static_cast<char>(byte));
-        digitalWrite(LMC_PIN_STATUS_LED, HIGH);
+        device.led.set(true);
         ledOffAtMs = now + kActivityLedMs;
     }
-    if (static_cast<int32_t>(now - ledOffAtMs) >= 0) digitalWrite(LMC_PIN_STATUS_LED, LOW);
-
-    // Chirp when a corrupted byte was dropped.
-    const uint32_t parityErrors = device.link.receiver().parityErrors();
-    if (parityErrors != lastParityErrors) {
-        lastParityErrors = parityErrors;
-        device.buzzer.set(true);
-        buzzerOffAtMs = now + kErrorChirpMs;
-    }
-    if (device.buzzer.isOn() && static_cast<int32_t>(now - buzzerOffAtMs) >= 0) {
-        device.buzzer.set(false);
-    }
+    if (device.led.isOn() && static_cast<int32_t>(now - ledOffAtMs) >= 0) device.led.set(false);
 }
 
 }  // namespace serial_mode

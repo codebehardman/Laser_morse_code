@@ -12,12 +12,8 @@ void waitMs(Device& device, uint32_t durationMs) {
     while (millis() - start < durationMs) device.updateInputs();
 }
 
-// Mirror the receiver on the buzzer and status LED.
-void followSensor(Device& device) {
-    const bool light = device.sensor.lightDetected();
-    device.buzzer.set(light);
-    digitalWrite(LMC_PIN_STATUS_LED, light ? HIGH : LOW);
-}
+// Mirror the receiver on the status LED.
+void followSensor(Device& device) { device.led.set(device.sensor.lightDetected()); }
 
 }  // namespace
 
@@ -58,8 +54,7 @@ bool testSensor(Device& device, uint32_t durationMs) {
         }
         followSensor(device);
     }
-    device.buzzer.set(false);
-    digitalWrite(LMC_PIN_STATUS_LED, LOW);
+    device.led.set(false);
 
     const uint32_t pulses = device.sensor.activations();
     console::printf("[sensor] Done: %lu light pulses detected.\n",
@@ -84,17 +79,6 @@ bool testButton(Device& device, uint32_t durationMs) {
     const uint32_t presses = device.button.activations();
     console::printf("[button] Done: %lu presses.\n", static_cast<unsigned long>(presses));
     return presses > 0;
-}
-
-bool testBuzzer(Device& device) {
-    console::println("[buzzer] Three short beeps, then one long beep.");
-    for (int i = 0; i < 3; ++i) {
-        device.buzzer.beep(100);
-        delay(150);
-    }
-    device.buzzer.beep(600);
-    console::println("[buzzer] Done.");
-    return true;
 }
 
 void sendPulses(Device& device, uint32_t count, uint32_t widthMs) {
@@ -158,33 +142,32 @@ bool countPulses(Device& device, uint32_t expected, uint32_t timeoutMs) {
 }
 
 void standaloneSelfTest(Device& device) {
-    // 1. Two beeps: buzzer works.
-    device.buzzer.beep(100);
-    delay(150);
-    device.buzzer.beep(100);
+    // 1. Three quick flashes: self-test starting.
+    device.led.flash(3, 100, 100);
     delay(500);
 
-    // 2. Five laser blinks with the status LED.
+    // 2. Five laser blinks, with the LED blinking in step.
     for (int i = 0; i < 5; ++i) {
         device.laser.set(true);
-        digitalWrite(LMC_PIN_STATUS_LED, HIGH);
+        device.led.set(true);
         delay(250);
         device.laser.set(false);
-        digitalWrite(LMC_PIN_STATUS_LED, LOW);
+        device.led.set(false);
         delay(250);
     }
+    delay(500);
 
-    // 3. Ten seconds of receiver monitoring: buzzer/LED follow the light.
+    // 3. Ten seconds of receiver monitoring: the LED follows the light.
     const uint32_t start = millis();
     while (millis() - start < 10000) {
         device.updateInputs();
         followSensor(device);
     }
-    device.buzzer.set(false);
-    digitalWrite(LMC_PIN_STATUS_LED, LOW);
+    device.led.set(false);
+    delay(500);
 
-    // 4. One long beep: self-test finished.
-    device.buzzer.beep(600);
+    // 4. One long flash: self-test finished.
+    device.led.flash(1, 1000, 0);
 }
 
 }  // namespace diagnostics
