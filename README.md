@@ -1,14 +1,23 @@
 # Laser Morse Code Transceiver
 
-Firmware for the ECE 198 laser transceiver: two identical STM32F103C8T6 units
-that talk to each other in Morse code over a visible laser beam, without any
+Firmware for the ECE 198 laser transceiver: two identical units that talk
+to each other in Morse code over a visible laser beam, without any
 radio emissions (so they can be used inside the National Radio Quiet Zone).
 
 Both units run the **same firmware**, and each one can both send and receive.
+The firmware supports two boards:
+
+| Board | PlatformIO environment | Flashing |
+|-------|------------------------|----------|
+| **ESP32-WROOM-32 DevKit** (current) | `esp32` (default) | over its USB port, no extra hardware |
+| STM32F103C8T6 "Blue Pill" | `bluepill` / `bluepill_uart` | needs an ST-LINK V2 or USB-serial adapter |
+
+The ESP32's Wi-Fi and Bluetooth are never switched on by this firmware, so
+the board does not transmit radio.
 
 ## Modes
 
-When a unit powers up, the on-board LED (PC13) gives a short blip every half
+When a unit powers up, the on-board LED gives a short blip every half
 second while it waits. The **first key press** chooses the mode:
 
 | Press | Mode | LED confirmation |
@@ -55,7 +64,7 @@ src/
     serial_mode.{hpp,cpp}   serial terminal mode
   commands.{hpp,cpp}      serial console commands (/help, /test, /wpm, ...)
   diagnostics.{hpp,cpp}   hardware tests: laser, sensor, button, link
-  console.{hpp,cpp}       serial console over the chip's USB port
+  console.{hpp,cpp}       serial console over the board's USB port
   device.hpp              references to all modules, shared by commands/tests
   drivers/                laser, phototransistor, button, status LED drivers,
                           laser_uart: timer-interrupt serial link over the laser
@@ -69,77 +78,70 @@ test/                     unit tests for both libraries, run on your PC
 
 ## Wiring
 
-Pins from the design-document schematic:
+| Part | ESP32 DevKit | STM32F103C8T6 | Notes |
+|------|--------------|---------------|-------|
+| Laser (via NPN transistor Q1) | **GPIO 25** | PA1 | high = laser on |
+| Phototransistor + pull-up resistor | **GPIO 26** | PA0 | low = light detected. **Pull-up to 3.3 V, never 5 V** |
+| Key button to GND | **GPIO 27** | PA2 | internal pull-up |
+| Status LED | GPIO 2 (on board) | PC13 (on board) | |
+| Laser supply (R1 + laser diode) | **VIN / 5V** | 5V | USB 5 V while plugged in |
+| Pull-up supply | **3V3** | 3.3 | |
+| USB | on-board connector | on-board connector | power + serial console |
 
-| Part | Pin | Notes |
-|------|-----|-------|
-| Laser (via NPN transistor Q1) | PA1 | high = laser on |
-| Phototransistor + pull-up resistor | PA0 | low = light detected. **Pull-up to 3.3 V, not 5 V** (see below) |
-| Key button to GND | PA2 | internal pull-up |
-| Status LED | PC13 (on board) | lights when PC13 is low |
-| USB | on-board connector | power + serial console |
+```
+ESP32 DevKit
+  VIN  ──[100Ω R1]──▶|── laser diode ── Q1 collector
+  GPIO25 ─────────────────────────────── Q1 base   (Q1 emitter → GND)
+  3V3  ──[47kΩ]──┬── GPIO26
+                 └── phototransistor collector   (emitter → GND)
+  GPIO27 ──[button]── GND
+```
 
-Keep PA11/PA12 (USB) and PA13/PA14 (SWD programming) free. To use different
-pins, add `-D LMC_PIN_...=Pxx` flags in `platformio.ini`. If your board's LED
-is elsewhere or lights when the pin is high, set `LMC_PIN_STATUS_LED` and
-`LMC_STATUS_LED_ACTIVE_LOW=0`.
+All of these boards' pins are 3.3 V only. On the ESP32 avoid GPIO 0, 2, 12
+and 15 (they affect booting) and GPIO 34–39 (input-only) for external parts.
+To use different pins, add `-D LMC_PIN_...=` flags in `platformio.ini`.
 
 ## Flashing
 
-The F103C8T6 has no programmer built in, and its USB port can't be used for
-flashing until you've installed a bootloader. Flash it **once per board**
-using one of these:
+### ESP32
 
-### Option A: ST-LINK V2 dongle (recommended)
-
-Connect the dongle to the 4-pin SWD header at the end of the board:
-
-| ST-LINK | Board |
-|---------|-------|
-| SWDIO | DIO (PA13) |
-| SWCLK | CLK / DCLK (PA14) |
-| GND | GND |
-| 3.3V | 3.3 |
-
-Unplug the board's own USB cable while flashing (the dongle powers it), then:
+Plug the ESP32 into the computer and run:
 
 ```sh
-pio run -e bluepill -t upload
-```
-
-If the upload fails with "init mode failed", hold the board's RESET button,
-start the upload, and release RESET when OpenOCD starts printing. This is
-usually only needed the first time, if the factory demo firmware has turned
-off the SWD pins.
-
-### Option B: USB-serial adapter (3.3 V FTDI/CP2102/CH340)
-
-| Adapter | Board |
-|---------|-------|
-| TX | PA10 (RX1) |
-| RX | PA9 (TX1) |
-| GND | GND |
-| 3.3V | 3.3 |
-
-1. Move the **BOOT0** jumper to **1**, press RESET.
-2. Run `pio run -e bluepill_uart -t upload`.
-3. Move BOOT0 back to **0** and press RESET to run the firmware.
-
-### After flashing
-
-Plug the board's own USB connector into the PC. It shows up as a serial
-port (`/dev/cu.usbmodem*` on macOS, `COMx` on Windows). Open it with:
-
-```sh
+pio run -e esp32 -t upload
 pio device monitor
 ```
 
+Or in VS Code: PlatformIO sidebar → **esp32** → **Upload**, then
+**Monitor**. The board shows up as `/dev/cu.usbserial-*` on macOS (`COMx` on
+Windows). If the upload stops at "Connecting...", hold the board's **BOOT**
+button until the upload starts. If it fails with "serial noise or
+corruption", lower `upload_speed` in `platformio.ini` (e.g. to 115200).
+
 Flash both units the same way.
+
+### STM32F103C8T6
+
+This chip has no programmer built in, and its USB port can't be used for
+flashing until you've installed a bootloader. Flash it **once per board**
+using one of these.
+
+**ST-LINK V2 (recommended).** Connect SWDIO→DIO, SWCLK→CLK, GND→GND and
+3.3V→3.3 on the 4-pin header at the end of the board. Unplug the board's own
+USB, then run `pio run -e bluepill -t upload`. A Nucleo board's built-in
+ST-LINK also works: remove its two CN2 jumpers and use CN4 (pin 2 SWCLK,
+pin 3 GND, pin 4 SWDIO).
+
+**USB-serial adapter.** Connect TX→PA10, RX→PA9 and GND. Set **BOOT0 = 1**,
+press RESET, run `pio run -e bluepill_uart -t upload`, then set BOOT0 back
+to 0 and press RESET.
+
+After flashing, plug in the board's own USB and run `pio device monitor`.
 
 ## Using the serial console
 
-Open the board's USB serial port in any terminal (the baud rate setting
-doesn't matter over USB; 115200 is fine). In Morse mode, each line
+Open the board's USB serial port in any terminal at **115200 baud**. On the
+ESP32, opening the port restarts the board, so you'll see the mode prompt. In Morse mode, each line
 you type is sent as Morse code when you press Enter. Received text shows up as `RX< ...`.
 
 ```
@@ -192,7 +194,11 @@ patterns appear as `*`.
 
 ## Hardware notes
 
-- **USB not detected?** Many F103C8T6 boards have the wrong USB pull-up
+- **Laser brightness.** The laser circuit is designed for 5 V. Take it from
+  the ESP32's VIN/5V pin, which carries USB 5 V while plugged in. From 3.3 V
+  the laser gets only about a third of its current; if you must use 3.3 V,
+  change R1 from 100 Ω to about 33 Ω (check the laser's datasheet first).
+- **USB not detected (STM32)?** Many F103C8T6 boards have the wrong USB pull-up
   resistor (R10 = 10 kΩ instead of 1.5 kΩ). Most PCs still work. If yours
   doesn't, replace R10 or add 1.8 kΩ between PA12 and 3.3 V.
 - **Phototransistor speed in serial mode.** At 9600 baud each bit lasts

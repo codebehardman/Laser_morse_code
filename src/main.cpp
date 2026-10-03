@@ -1,4 +1,4 @@
-// Laser Morse code transceiver - STM32F103C8T6 firmware.
+// Laser Morse code transceiver firmware (ESP32 or STM32F103C8T6).
 //
 // Both units run this same firmware; each one transmits and receives.
 // After power-up the first key press selects the mode:
@@ -10,7 +10,7 @@
 //                   Whatever is typed in one unit's serial terminal appears
 //                   in the other's, sent at 9600 baud over the laser.
 //
-// The mode stays until reset. The serial console is the board's own USB port.
+// The mode stays until reset. The serial console is the board's USB port.
 
 #include <Arduino.h>
 
@@ -25,7 +25,7 @@
 namespace {
 
 Laser laser(LMC_PIN_LASER);
-LaserUart link(LMC_PIN_LASER, LMC_PIN_SENSOR, LMC_LINK_TIMER);
+LaserUart link(LMC_PIN_LASER, LMC_PIN_SENSOR);
 PhotoSensor sensor(LMC_PIN_SENSOR, config::kSensorDebounceMs);
 Button button(LMC_PIN_BUTTON, config::kButtonDebounceMs);
 StatusLed led(LMC_PIN_STATUS_LED, LMC_STATUS_LED_ACTIVE_LOW);

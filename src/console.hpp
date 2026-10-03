@@ -2,7 +2,7 @@
 
 #include <stddef.h>
 
-// Serial console over the STM32's own USB port (USB CDC virtual COM port).
+// Serial console over the board's USB port.
 namespace console {
 
 void begin();

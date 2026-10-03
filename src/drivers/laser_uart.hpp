@@ -5,15 +5,15 @@
 #include "soft_uart.hpp"
 
 // 8E1 serial link over the laser, bit-banged from a hardware timer interrupt
-// running at baud * optical::kOversample. PA0/PA1 have no UART peripheral,
-// hence the software UART.
+// running at baud * optical::kOversample (76.8 kHz for 9600 baud).
 //
 // Laser on = space (0), laser off = mark (1, idle). The phototransistor pulls
 // its pin low when lit, so the receive pin level is the UART level directly.
+//
+// Only one instance can be active (it owns the timer interrupt).
 class LaserUart {
 public:
-    LaserUart(uint32_t laserPin, uint32_t sensorPin, TIM_TypeDef* timer)
-        : laserPin_(laserPin), sensorPin_(sensorPin), timerInstance_(timer) {}
+    LaserUart(uint32_t laserPin, uint32_t sensorPin) : laserPin_(laserPin), sensorPin_(sensorPin) {}
 
     // Takes over the laser and sensor pins and starts the tick interrupt.
     void begin(uint32_t baud);
@@ -28,15 +28,12 @@ public:
 
     const optical::SoftUartRx& receiver() const { return rx_; }
 
-private:
-    void onTick();
+    // One oversampling tick; called from the timer interrupt.
+    void tick();
 
+private:
     uint32_t laserPin_;
     uint32_t sensorPin_;
-    TIM_TypeDef* timerInstance_;
-    HardwareTimer* timer_ = nullptr;
-    PinName laserPinName_ = NC;
-    PinName sensorPinName_ = NC;
 
     optical::SoftUartTx tx_;
     optical::SoftUartRx rx_;
