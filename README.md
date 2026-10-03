@@ -1,6 +1,6 @@
 # Laser Morse Code Transceiver
 
-Firmware for the ECE 198 laser transceiver: two identical units that talk
+Firmware for laser transceiver: two identical units that talk
 to each other in Morse code over a visible laser beam, without any
 radio emissions (so they can be used inside the National Radio Quiet Zone).
 
