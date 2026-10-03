@@ -4,7 +4,9 @@
 
 namespace morse {
 
-MorseTransmitter::MorseTransmitter(uint32_t unitMs) { setUnitMs(unitMs); }
+MorseTransmitter::MorseTransmitter(uint32_t unitMs, bool startProsign) : startProsign_(startProsign) {
+    setUnitMs(unitMs);
+}
 
 size_t MorseTransmitter::enqueue(const char* text) {
     size_t count = 0;
@@ -26,6 +28,7 @@ bool MorseTransmitter::enqueue(char c) {
 void MorseTransmitter::clear() {
     head_ = tail_ = 0;
     pattern_ = nullptr;
+    nextPattern_ = nullptr;
     keyDown_ = false;
     segmentActive_ = false;
     sentSinceIdle_ = false;
@@ -75,6 +78,13 @@ bool MorseTransmitter::startNextSegment(uint32_t startMs) {
 
     // Current character finished: the 1-unit element gap has already elapsed,
     // so only the remainder of the character/word gap is added here.
+    if (nextPattern_ != nullptr) {  // prosign done: on to the first letter
+        pattern_ = nextPattern_;
+        nextPattern_ = nullptr;
+        startSegment(false, kCharGapUnits - kElementGapUnits, startMs);
+        return true;
+    }
+
     uint32_t extraGapUnits = 0;
     char c;
     while (pop(c)) {
@@ -87,6 +97,10 @@ bool MorseTransmitter::startNextSegment(uint32_t startMs) {
 
         if (sentSinceIdle_ && extraGapUnits == 0) {
             extraGapUnits = kCharGapUnits - kElementGapUnits;
+        }
+        if (!sentSinceIdle_ && startProsign_) {
+            nextPattern_ = pattern;
+            pattern = kStartProsign;
         }
         sentSinceIdle_ = true;
         pattern_ = pattern;

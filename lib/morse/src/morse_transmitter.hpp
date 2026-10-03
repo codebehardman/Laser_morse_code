@@ -13,7 +13,9 @@ namespace morse {
 
 class MorseTransmitter {
 public:
-    explicit MorseTransmitter(uint32_t unitMs);
+    // With startProsign, every message (text sent after an idle period)
+    // begins with kStartProsign.
+    explicit MorseTransmitter(uint32_t unitMs, bool startProsign = true);
 
     // Queue text for transmission. Characters without a Morse representation
     // are skipped when they are reached. Returns the number of characters
@@ -45,7 +47,9 @@ private:
     size_t tail_ = 0;  // next read
 
     uint32_t unitMs_;
-    const char* pattern_ = nullptr;  // remaining elements of current character
+    bool startProsign_;
+    const char* pattern_ = nullptr;      // remaining elements of current character
+    const char* nextPattern_ = nullptr;  // first letter, waiting behind the prosign
     bool keyDown_ = false;
     bool segmentActive_ = false;
     bool sentSinceIdle_ = false;  // a character was sent since the last idle period

@@ -54,8 +54,12 @@ constexpr uint16_t kSensorThreshold =
 // Serial console speed (set the same in your terminal).
 constexpr uint32_t kConsoleBaud = 115200;
 
-// Default transmit speed for text typed in the serial console.
+// Morse speeds (words per minute):
+// - typed text is sent fast (changeable with /wpm);
+// - the receiver starts from the hand-keying (button) speed and adapts.
+//   Typed messages begin with a start signal that tells it their speed.
 constexpr uint32_t kDefaultWpm = 20;
+constexpr uint32_t kKeyedWpm = 12;
 constexpr uint32_t kMinWpm = 5;
 constexpr uint32_t kMaxWpm = 40;
 
@@ -71,10 +75,11 @@ constexpr uint32_t kMessageEndMs = 3000;
 constexpr uint32_t kModeSelectHoldMs = 1000;
 
 // Serial terminal mode: laser link speed (8E1 framing). The design doc asks
-// for 9600, but with a 100k phototransistor pull-up the pin rises too slowly
-// for 104 us bits, so this uses 1200 baud (833 us bits). Raise it together
-// with a smaller pull-up (faster but less sensitive) on both units.
-constexpr uint32_t kLinkBaud = 1200;
+// for 9600, but the phototransistor with its 100k pull-up is too slow for
+// that: 300 baud was the speed that worked in testing (~27 characters per
+// second, so a short line takes about a second). Try faster with /baud, or
+// measure with /test edge.
+constexpr uint32_t kLinkBaud = 300;
 
 // Serial terminal mode: show what you type in your own terminal too, since
 // most terminals don't echo locally.

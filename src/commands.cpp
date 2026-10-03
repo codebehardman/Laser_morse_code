@@ -181,8 +181,10 @@ void handleLine(Device& device, const char* line) {
     if (line[0] != '/') {
         const size_t queued = device.transmitter.enqueue(line);
         device.transmitter.enqueue(' ');  // word gap between lines
-        const uint32_t seconds =
-            (morse::messageUnits(line) * device.transmitter.unitMs() + 999) / 1000;
+        // Messages start with the start prosign, then a letter gap.
+        const uint32_t units =
+            morse::kStartProsignUnits + morse::kCharGapUnits + morse::messageUnits(line);
+        const uint32_t seconds = (units * device.transmitter.unitMs() + 999) / 1000;
         console::printf("TX> %s  (sending as Morse at %lu WPM, ~%lu s)\n", line,
                         static_cast<unsigned long>(device.settings.wpm),
                         static_cast<unsigned long>(seconds));

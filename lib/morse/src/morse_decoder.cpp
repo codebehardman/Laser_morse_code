@@ -1,8 +1,13 @@
 #include "morse_decoder.hpp"
 
+#include <cstring>
+
 namespace morse {
 
-MorseDecoder::MorseDecoder(uint32_t initialUnitMs) { setUnitMs(initialUnitMs); }
+MorseDecoder::MorseDecoder(uint32_t initialUnitMs) {
+    setUnitMs(initialUnitMs);
+    initialUnitMs_ = unitMs_;
+}
 
 void MorseDecoder::setUnitMs(uint32_t unitMs) {
     if (unitMs < kMinUnitMs) unitMs = kMinUnitMs;
@@ -28,6 +33,11 @@ void MorseDecoder::update(bool lightOn, uint32_t nowMs) {
     if (lightOn != lightOn_) {
         if (lightOn) {
             handleGap(elapsed);  // gap ended
+            if (elapsed >= kNewMessageMs || elapsed >= kNewMessageUnits * unitMs_) {
+                // New message: its speed may differ, start from hand-keying speed.
+                historyCount_ = 0;
+                unitMs_ = initialUnitMs_;
+            }
         } else {
             onMarkEnded(elapsed);
         }
@@ -46,16 +56,24 @@ void MorseDecoder::onMarkEnded(uint32_t durationMs) {
         return;
     }
     ++marksSeen_;
+    updateSpeed(durationMs);
+    if (patternLength_ < kMaxPatternLength + 1) marks_[patternLength_++] = durationMs;
+}
 
-    // Dots are ~1 unit, dashes ~3 units: split at 2 units.
-    const bool isDash = durationMs >= 2 * unitMs_;
-    if (patternLength_ < kMaxPatternLength + 1) {
-        pattern_[patternLength_++] = isDash ? '-' : '.';
+void MorseDecoder::updateSpeed(uint32_t durationMs) {
+    history_[historyNext_] = durationMs;
+    historyNext_ = (historyNext_ + 1) % kHistorySize;
+    if (historyCount_ < kHistorySize) ++historyCount_;
+
+    uint32_t shortest = UINT32_MAX;
+    uint32_t longest = 0;
+    for (size_t i = 0; i < historyCount_; ++i) {
+        const size_t index = (historyNext_ + kHistorySize - 1 - i) % kHistorySize;
+        if (history_[index] < shortest) shortest = history_[index];
+        if (history_[index] > longest) longest = history_[index];
     }
-
-    // Track the sender's speed with a slow moving average.
-    const uint32_t measuredUnit = isDash ? durationMs / kDashUnits : durationMs;
-    setUnitMs((3 * unitMs_ + measuredUnit) / 4);
+    // Only when both dots and dashes are present: cutoff (2 units) halfway.
+    if (longest >= 2 * shortest) setUnitMs((shortest + longest) / 4);
 }
 
 void MorseDecoder::handleGap(uint32_t gapMs) {
@@ -71,10 +89,20 @@ void MorseDecoder::handleGap(uint32_t gapMs) {
 }
 
 void MorseDecoder::flushCharacter() {
+    // Dots are ~1 unit, dashes ~3 units: split at 2 units, using the speed
+    // estimate that includes all of this letter's marks.
     char c = '\0';
     if (patternLength_ <= kMaxPatternLength) {
-        pattern_[patternLength_] = '\0';
-        c = decode(pattern_);
+        char pattern[kMaxPatternLength + 1];
+        for (size_t i = 0; i < patternLength_; ++i) {
+            pattern[i] = marks_[i] >= 2 * unitMs_ ? '-' : '.';
+        }
+        pattern[patternLength_] = '\0';
+        if (std::strcmp(pattern, kStartProsign) == 0) {  // start of a typed message
+            patternLength_ = 0;
+            return;
+        }
+        c = decode(pattern);
     }
     if (c == '\0') {
         c = kUnknownChar;

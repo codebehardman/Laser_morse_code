@@ -28,12 +28,18 @@ The mode stays until you press reset or cut the power. Set both units to the
 same mode.
 
 ### Morse code mode
-- **Send:** the key turns the laser on while pressed. Text typed in the
-  serial console is also keyed out as Morse, at 20 words per minute by
-  default (`/wpm` changes it). Morse is slow: roughly 0.6 s per letter at
-  20 WPM, so the console shows how long each message will take.
+- **Send:** the key turns the laser on while pressed (hand keying, around
+  12 words per minute). Text typed in the serial console is keyed out
+  automatically at a faster 20 WPM (`/wpm` changes it). Morse is slow:
+  roughly 0.6 s per letter at 20 WPM, so the console shows how long each
+  message will take.
+- Typed messages start with the Morse start-of-message signal `-.-.-` (KA).
+  It lets the receiver lock onto the faster typed speed before the first
+  letter, and it is not shown as text.
 - **Receive:** the LED lights while the laser hits the phototransistor, and
-  the pulses are decoded to text in the serial console.
+  the pulses are decoded to text in the serial console. The receiver adapts
+  to the sender's speed: it compares short and long marks to find the
+  dot/dash cutoff, and after a pause it goes back to hand-keying speed.
 - Holding the key for more than 1.5 s keeps the laser on for aiming. The
   receiver ignores holds that long, so aiming never shows up as text.
 
@@ -44,9 +50,10 @@ is sent over the laser and appears in the other unit's terminal as
 - Each line travels as one frame (start marker, text, CRC-8 checksum, end
   marker). The receiver shows a line only if it arrived intact, and prints
   `[message corrupted - ask to resend]` otherwise.
-- The laser link runs at **1200 baud, 8 data bits, even parity, 1 stop bit**.
-  The design document specifies 9600 baud, but the phototransistor with its
-  100 kΩ pull-up is too slow for that (see Hardware notes). A dedicated task
+- The laser link runs at **300 baud, 8 data bits, even parity, 1 stop bit**
+  (about 27 characters per second). The design document specifies 9600 baud,
+  but the phototransistor with its 100 kΩ pull-up is too slow for that (see
+  Hardware notes). A dedicated task
   on the ESP32's second core sends and receives the bits, sampling the
   sensor 8 times per bit with a 3-sample majority vote.
 - Backspace works while typing. Commands in this mode:
@@ -197,7 +204,8 @@ pio test -e native
 
 - **Morse:** the alphabet tables, the transmitter's exact timing, and
   transmitter → decoder loopback, including speed mismatch, ±20% human timing
-  jitter, aim holds and unknown patterns.
+  jitter, switching between typed and hand-keyed speeds, the start prosign,
+  aim holds and unknown patterns.
 - **Serial link:** frame layout, all 256 byte values, any sampling phase,
   ±3% clock mismatch, detection of a flipped bit, glitches, and a held-on
   laser.
@@ -221,9 +229,10 @@ patterns appear as `*`.
 - **Phototransistor pull-up: sensitivity vs. speed.** A larger pull-up is
   more sensitive but slower to return high after the light goes off. With
   100 kΩ the laser is detected, but 9600 baud came through garbled; with
-  10 kΩ the laser was no longer detected at all. The link therefore runs at
-  1200 baud (`config::kLinkBaud`). To go faster, try 50 kΩ (2 × 100 kΩ in
-  parallel) at 2400 baud, on both units.
+  10 kΩ the laser was no longer detected at all; 1200 baud was still
+  corrupted, 300 baud worked. The link therefore runs at 300 baud
+  (`config::kLinkBaud`). To go faster, try 50 kΩ (2 × 100 kΩ in parallel) and
+  use `/test edge` to find the highest speed it supports.
 - **Q1 base resistor.** The design-doc schematic drives the laser
   transistor's base straight from the microcontroller pin. Add a resistor of
   about 1 kΩ.

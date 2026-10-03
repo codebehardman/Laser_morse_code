@@ -6,8 +6,15 @@
 // receiver state. Decoded characters are read back with read(); a ' ' is
 // produced at each word gap.
 //
-// Human keying speed varies, so the dot length ("unit") is estimated
-// continuously from received marks instead of being fixed.
+// The sender's speed varies (hand keying vs. typed text), so the dot length
+// ("unit") is estimated from the received marks instead of being fixed:
+// a dash is ~3x a dot, so whenever recent marks contain both, the dot/dash
+// cutoff is set halfway between the shortest and the longest. Each letter is
+// classified only once it is complete, so a speed change is picked up
+// within the letter. After a long pause the history is cleared and the speed
+// goes back to the initial (hand-keying) value, since the next message may
+// come at a different speed. Typed messages start with kStartProsign, which
+// sets the speed before their first letter and is not output.
 
 #include <cstddef>
 #include <cstdint>
@@ -44,17 +51,30 @@ public:
 private:
     static constexpr size_t kOutputSize = 64;  // must be a power of two
 
+    // Recent marks used to estimate the speed.
+    static constexpr size_t kHistorySize = 8;
+    // A pause this long (in units, or kNewMessageMs) starts a new message.
+    static constexpr uint32_t kNewMessageUnits = 14;
+    static constexpr uint32_t kNewMessageMs = 1500;
+
     void onMarkEnded(uint32_t durationMs);
+    void updateSpeed(uint32_t durationMs);
     void handleGap(uint32_t gapMs);
     void flushCharacter();
     void push(char c);
 
     uint32_t unitMs_;
+    uint32_t initialUnitMs_;
     bool lightOn_ = false;
     bool started_ = false;
     uint32_t lastEdgeMs_ = 0;
 
-    char pattern_[kMaxPatternLength + 2] = {};  // +1 overflow marker, +1 terminator
+    uint32_t history_[kHistorySize] = {};
+    size_t historyCount_ = 0;
+    size_t historyNext_ = 0;
+
+    // Mark durations of the letter being received (+1 to detect overlong).
+    uint32_t marks_[kMaxPatternLength + 1] = {};
     size_t patternLength_ = 0;
     bool wordPending_ = false;  // characters emitted since the last word gap
 

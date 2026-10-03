@@ -46,14 +46,15 @@ std::string trimRight(std::string s) {
 
 // Feed the decoder a hand-keyed sequence. Elements: '.', '-', ' ' (char
 // gap), '/' (word gap). Each duration is jittered by up to +/- jitterPct.
-std::string keyByHand(const char* sequence, uint32_t unitMs, int jitterPct, uint32_t seed) {
+std::string keyByHand(const char* sequence, uint32_t unitMs, int jitterPct, uint32_t seed,
+                      uint32_t decoderUnitMs = 100) {
     std::srand(seed);
     auto jitter = [&](uint32_t ms) {
         const int pct = jitterPct == 0 ? 0 : (std::rand() % (2 * jitterPct + 1)) - jitterPct;
         return static_cast<uint32_t>(static_cast<int>(ms) * (100 + pct) / 100);
     };
 
-    MorseDecoder rx(100);  // deliberately not the sender's speed
+    MorseDecoder rx(decoderUnitMs);  // deliberately not the sender's speed
     std::string out;
     uint32_t now = 0;
     auto hold = [&](bool light, uint32_t ms) {
@@ -104,7 +105,7 @@ void test_decode_round_trip_whole_table() {
 
 void test_transmitter_timing_for_letter_A() {
     // A = .-  -> on 1u, off 1u, on 3u, then trailing gap.
-    MorseTransmitter tx(10);
+    MorseTransmitter tx(10, /*startProsign=*/false);
     tx.enqueue("A");
     std::string trace;
     for (uint32_t t = 0; t < 60; ++t) trace += tx.update(t) ? '#' : '_';
@@ -149,6 +150,80 @@ void test_decoder_handles_human_jitter() {
     TEST_ASSERT_EQUAL_STRING("CQ DE", trimRight(out).c_str());
 }
 
+void test_decoder_reads_slow_hand_keying_after_fast_typed_text() {
+    // A typed message at 20 WPM, a pause, then a person keys at ~8 WPM
+    // (150 ms dots). Used to lock up reading every dot as a dash.
+    MorseTransmitter tx(60);
+    MorseDecoder rx(100);
+    std::string out;
+    uint32_t now = 0;
+    tx.enqueue("CQ");
+    uint32_t idleSince = 0;
+    for (; now - idleSince < 3000; ++now) {  // send, then 3 s of silence
+        const bool key = tx.update(now);
+        if (tx.busy()) idleSince = now;
+        rx.update(key, now);
+        char c;
+        while (rx.read(c)) out += c;
+    }
+    std::srand(7);
+    auto hold = [&](bool light, uint32_t ms) {
+        const int pct = (std::rand() % 31) - 15;
+        for (uint32_t end = now + ms * (100 + pct) / 100; now < end; ++now) {
+            rx.update(light, now);
+            char c;
+            while (rx.read(c)) out += c;
+        }
+    };
+    for (const char* p = "... --- ..."; *p != '\0'; ++p) {
+        if (*p == '.') { hold(true, 150); hold(false, 150); }
+        if (*p == '-') { hold(true, 450); hold(false, 150); }
+        if (*p == ' ') hold(false, 300);
+    }
+    hold(false, 3000);
+    TEST_ASSERT_EQUAL_STRING("CQ SOS", trimRight(out).c_str());
+}
+
+void test_start_prosign_is_not_output() {
+    // "EEE" at 20 WPM has no dashes: only the prosign tells the speed.
+    TEST_ASSERT_EQUAL_STRING("EEE HIS", trimRight(loopback("EEE HIS", 60, 100)).c_str());
+}
+
+void test_decoder_expecting_slow_reads_fast_typed_text() {
+    // Receiver set up for hand keying (12 WPM), typed text arrives at 20 WPM
+    // with no warm-up word.
+    TEST_ASSERT_EQUAL_STRING("HELLO WORLD", trimRight(loopback("HELLO WORLD", 60, 100)).c_str());
+}
+
+void test_decoder_follows_speed_change_back_and_forth() {
+    // 20 WPM typed text, then ~8 WPM hand keying, on the same decoder.
+    MorseDecoder rx(100);
+    std::string out;
+    uint32_t now = 0;
+    auto hold = [&](bool light, uint32_t ms) {
+        for (uint32_t end = now + ms; now < end; ++now) {
+            rx.update(light, now);
+            char c;
+            while (rx.read(c)) out += c;
+        }
+    };
+    auto key = [&](const char* sequence, uint32_t unit) {
+        for (const char* p = sequence; *p != '\0'; ++p) {
+            switch (*p) {
+                case '.': hold(true, unit); hold(false, unit); break;
+                case '-': hold(true, 3 * unit); hold(false, unit); break;
+                case ' ': hold(false, 2 * unit); break;
+                case '/': hold(false, 6 * unit); break;
+            }
+        }
+        hold(false, 10 * unit);
+    };
+    hold(false, 500);
+    key("-.-. --.- / -.. .", 60);       // CQ DE (fast)
+    key("-- --- .-. ... .", 150);       // MORSE (slow)
+    TEST_ASSERT_EQUAL_STRING("CQ DE MORSE", trimRight(out).c_str());
+}
+
 void test_decoder_ignores_aim_hold() {
     MorseDecoder rx(100);
     std::string out;
@@ -185,6 +260,10 @@ int main() {
     RUN_TEST(test_loopback_sentence_with_word_gaps);
     RUN_TEST(test_decoder_adapts_to_faster_sender);
     RUN_TEST(test_decoder_handles_human_jitter);
+    RUN_TEST(test_decoder_reads_slow_hand_keying_after_fast_typed_text);
+    RUN_TEST(test_start_prosign_is_not_output);
+    RUN_TEST(test_decoder_expecting_slow_reads_fast_typed_text);
+    RUN_TEST(test_decoder_follows_speed_change_back_and_forth);
     RUN_TEST(test_decoder_ignores_aim_hold);
     RUN_TEST(test_decoder_reports_unknown_pattern);
     return UNITY_END();

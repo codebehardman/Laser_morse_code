@@ -20,6 +20,12 @@ constexpr uint32_t kMaxPatternLength = 7;
 // Character used to report a received pattern that is not in the table.
 constexpr char kUnknownChar = '*';
 
+// "KA" prosign (start of message). Typed messages begin with it so the
+// receiver can lock onto their speed before the first letter (it has both
+// dots and dashes). The decoder swallows it.
+constexpr const char* kStartProsign = "-.-.-";
+constexpr uint32_t kStartProsignUnits = 15;  // 3+1+1+1+3+1+1+1+3
+
 // PARIS standard: one word = 50 units, so unit_ms = 1200 / wpm.
 constexpr uint32_t wpmToUnitMs(uint32_t wpm) { return wpm == 0 ? 1200 : 1200 / wpm; }
 

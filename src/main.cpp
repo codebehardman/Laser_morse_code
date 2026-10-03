@@ -35,7 +35,7 @@ Button button(LMC_PIN_BUTTON, config::kButtonDebounceMs);
 StatusLed led(LMC_PIN_STATUS_LED, LMC_STATUS_LED_ACTIVE_LOW);
 
 morse::MorseTransmitter transmitter(morse::wpmToUnitMs(config::kDefaultWpm));
-morse::MorseDecoder decoder(morse::wpmToUnitMs(config::kDefaultWpm));
+morse::MorseDecoder decoder(morse::wpmToUnitMs(config::kKeyedWpm));
 
 Settings settings{config::kDefaultWpm, /*aim=*/false};
 Device device{laser, link, sensor, button, led, transmitter, decoder, settings};
