@@ -124,7 +124,11 @@ void handleLine(Device& device, const char* line) {
     if (line[0] != '/') {
         const size_t queued = device.transmitter.enqueue(line);
         device.transmitter.enqueue(' ');  // word gap between lines
-        console::printf("TX> %s\n", line);
+        const uint32_t seconds =
+            (morse::messageUnits(line) * device.transmitter.unitMs() + 999) / 1000;
+        console::printf("TX> %s  (sending as Morse at %lu WPM, ~%lu s)\n", line,
+                        static_cast<unsigned long>(device.settings.wpm),
+                        static_cast<unsigned long>(seconds));
         if (queued < strlen(line)) console::println("(transmit queue full - message truncated)");
         return;
     }

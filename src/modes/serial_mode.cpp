@@ -56,6 +56,13 @@ void handleTyped(Device& device, char c) {
     previousWasCr = isCr;
 
     if (isCr || isLf) {
+        if (inputLength > 0 && input[0] == '/') {
+            // Commands only exist in Morse mode; don't send them as text.
+            console::print("\r\n");
+            console::println("Commands like /test only work in Morse mode: press EN (reset) and tap the key.");
+            inputLength = 0;
+            return;
+        }
         sendInputLine(device);
     } else if (c == '\b' || c == 0x7F) {
         if (inputLength > 0) {

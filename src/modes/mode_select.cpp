@@ -20,8 +20,9 @@ const char* modeName(Mode mode) {
 }
 
 Mode selectMode(Device& device) {
-    console::printf("Select mode with the key: short press = Morse code, hold %lu s = serial terminal\n",
-                    static_cast<unsigned long>(config::kModeSelectHoldMs / 1000));
+    console::printf("Select mode with the key: tap = Morse code, "
+                    "hold %lu ms (until the LED flashes twice) = serial terminal\n",
+                    static_cast<unsigned long>(config::kModeSelectHoldMs));
 
     bool pressing = false;
     uint32_t pressStartMs = 0;
@@ -53,6 +54,6 @@ Mode selectMode(Device& device) {
     // Don't let the selecting press leak into the chosen mode.
     while (device.button.pressed()) device.button.update(millis());
 
-    console::printf("Mode: %s\n", modeName(mode));
+    console::printf("\n===== Mode: %s =====\n", modeName(mode));
     return mode;
 }

@@ -30,4 +30,8 @@ const char* encode(char c);
 // Returns the character for a dot/dash pattern, or '\0' if unknown.
 char decode(const char* pattern);
 
+// Number of units needed to key `text` with standard gaps, from the first
+// mark to the end of the last one. Unsupported characters are skipped.
+uint32_t messageUnits(const char* text);
+
 }  // namespace morse

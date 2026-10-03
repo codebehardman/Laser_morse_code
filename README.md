@@ -22,31 +22,38 @@ second while it waits. The **first key press** chooses the mode:
 
 | Press | Mode | LED confirmation |
 |-------|------|------------------|
-| Short (< 2 s) | **Morse code** | one long flash |
-| Hold ≥ 2 s    | **Serial terminal** | two long flashes (they start while you're still holding) |
+| Tap (< 1 s) | **Morse code** | one long flash |
+| Hold ≥ 1 s  | **Serial terminal** | two long flashes (they start while you're still holding, so let go then) |
+
+The serial monitor shows the chosen mode (`===== Mode: ... =====`). On the
+ESP32, press **EN** to reset and choose again.
 
 The mode stays until you press reset or cut the power. Set both units to the
 same mode.
 
 ### Morse code mode
 - **Send:** the key turns the laser on while pressed. Text typed in the
-  serial console is also keyed out as Morse.
+  serial console is also keyed out as Morse, at 20 words per minute by
+  default (`/wpm` changes it). Morse is slow: roughly 0.6 s per letter at
+  20 WPM, so the console shows how long each message will take.
 - **Receive:** the LED lights while the laser hits the phototransistor, and
   the pulses are decoded to text in the serial console.
 - Holding the key for more than 1.5 s keeps the laser on for aiming. The
   receiver ignores holds that long, so aiming never shows up as text.
 
 ### Serial terminal mode
-A transparent link between two PCs: whatever is typed in one unit's serial
-terminal comes out byte-for-byte in the other unit's terminal, and the link
-works in both directions at once.
-- The laser link runs at **9600 baud, 8 data bits, even parity, 1 stop bit**,
-  as in the design document. A timer interrupt sends and receives the bits,
-  sampling 8 times per bit with a 3-sample majority vote in the middle.
-- A byte that fails the parity or stop-bit check is **dropped** rather than
-  shown wrong.
-- Your own typing is echoed locally (`config::kSerialLocalEcho`). Line
-  endings are shown correctly whether your terminal sends CR, LF or CRLF.
+A text link between two PCs. Type a line and press **Enter**: the whole line
+is sent over the laser and appears in the other unit's terminal as
+`RX< ...`. It works in both directions at once.
+- Each line travels as one frame (start marker, text, CRC-8 checksum, end
+  marker). The receiver shows a line only if it arrived intact, and prints
+  `[message corrupted - ask to resend]` otherwise.
+- The laser link runs at **1200 baud, 8 data bits, even parity, 1 stop bit**.
+  The design document specifies 9600 baud, but the phototransistor with its
+  100 kΩ pull-up is too slow for that (see Hardware notes). A timer
+  interrupt sends and receives the bits, sampling 8 times per bit with a
+  3-sample majority vote.
+- Backspace works while typing. Commands (`/...`) only work in Morse mode.
 - Holding the key keeps the laser on for aiming. The other unit sees this as
   a line break and prints nothing.
 - The LED flashes when data arrives.
@@ -147,7 +154,7 @@ you type is sent as Morse code when you press Enter. Received text shows up as `
 ```
 /help               list commands
 /status             settings, receiver state, decoder speed estimate
-/wpm <n>            transmit speed, 5-30 words per minute (default 12)
+/wpm <n>            transmit speed, 5-40 words per minute (default 20)
 /aim on|off         hold the laser on to align the units
 /stop               abort the current transmission
 /table              print the Morse alphabet
@@ -201,12 +208,12 @@ patterns appear as `*`.
 - **USB not detected (STM32)?** Many F103C8T6 boards have the wrong USB pull-up
   resistor (R10 = 10 kΩ instead of 1.5 kΩ). Most PCs still work. If yours
   doesn't, replace R10 or add 1.8 kΩ between PA12 and 3.3 V.
-- **Phototransistor speed in serial mode.** At 9600 baud each bit lasts
-  104 µs. A phototransistor's switching time grows with its load resistor,
-  and the 47 kΩ pull-up may be too slow at this speed. If serial mode drops
-  bytes while Morse mode works, try a 4.7–10 kΩ pull-up (a lower value
-  responds faster but needs more light). You can also lower
-  `config::kLinkBaud` on both units.
+- **Phototransistor pull-up: sensitivity vs. speed.** A larger pull-up is
+  more sensitive but slower to return high after the light goes off. With
+  100 kΩ the laser is detected, but 9600 baud came through garbled; with
+  10 kΩ the laser was no longer detected at all. The link therefore runs at
+  1200 baud (`config::kLinkBaud`). To go faster, try 50 kΩ (2 × 100 kΩ in
+  parallel) at 2400 baud, on both units.
 - **PA0 is not 5 V tolerant on the F103.** The schematic ties the
   phototransistor's pull-up to 5 V; on this chip that pushes current into
   PA0's protection diode. Connect the pull-up to **3.3 V** instead.

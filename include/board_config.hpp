@@ -71,9 +71,9 @@ namespace config {
 constexpr uint32_t kConsoleBaud = 115200;
 
 // Default transmit speed for text typed in the serial console.
-constexpr uint32_t kDefaultWpm = 12;
+constexpr uint32_t kDefaultWpm = 20;
 constexpr uint32_t kMinWpm = 5;
-constexpr uint32_t kMaxWpm = 30;
+constexpr uint32_t kMaxWpm = 40;
 
 // Debounce times.
 constexpr uint32_t kButtonDebounceMs = 15;
@@ -84,10 +84,13 @@ constexpr uint32_t kMessageEndMs = 3000;
 
 // Mode selection: the first key press after power-up picks the mode.
 // Shorter than this = Morse mode, held at least this long = serial terminal.
-constexpr uint32_t kModeSelectHoldMs = 2000;
+constexpr uint32_t kModeSelectHoldMs = 1000;
 
-// Serial terminal mode: laser link speed (8E1 framing, as in the design doc).
-constexpr uint32_t kLinkBaud = 9600;
+// Serial terminal mode: laser link speed (8E1 framing). The design doc asks
+// for 9600, but with a 100k phototransistor pull-up the pin rises too slowly
+// for 104 us bits; 1200 baud (833 us bits) is reliable. Raise it together
+// with a smaller pull-up (faster but less sensitive) on both units.
+constexpr uint32_t kLinkBaud = 1200;
 
 // Serial terminal mode: show what you type in your own terminal too, since
 // most terminals don't echo locally.

@@ -114,6 +114,15 @@ void test_transmitter_timing_for_letter_A() {
         trace.c_str());
 }
 
+void test_message_units() {
+    TEST_ASSERT_EQUAL_UINT32(1, morse::messageUnits("E"));      // .
+    TEST_ASSERT_EQUAL_UINT32(5, morse::messageUnits("A"));      // . -
+    TEST_ASSERT_EQUAL_UINT32(5, morse::messageUnits("EE"));     // . (3) .
+    TEST_ASSERT_EQUAL_UINT32(9, morse::messageUnits("E E"));    // . (7) .
+    TEST_ASSERT_EQUAL_UINT32(5, morse::messageUnits("E#E"));    // # skipped
+    TEST_ASSERT_EQUAL_UINT32(0, morse::messageUnits(""));
+}
+
 void test_transmitter_skips_unsupported_characters() {
     TEST_ASSERT_EQUAL_STRING("SOS", trimRight(loopback("S#O~S", 50, 50)).c_str());
 }
@@ -170,6 +179,7 @@ int main() {
     RUN_TEST(test_encode_letters_and_digits);
     RUN_TEST(test_decode_round_trip_whole_table);
     RUN_TEST(test_transmitter_timing_for_letter_A);
+    RUN_TEST(test_message_units);
     RUN_TEST(test_transmitter_skips_unsupported_characters);
     RUN_TEST(test_loopback_sos);
     RUN_TEST(test_loopback_sentence_with_word_gaps);

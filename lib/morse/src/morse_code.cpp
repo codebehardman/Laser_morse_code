@@ -43,6 +43,27 @@ const char* encode(char c) {
     return nullptr;
 }
 
+uint32_t messageUnits(const char* text) {
+    uint32_t units = 0;
+    bool sentAny = false;
+    bool wordGap = false;
+    for (const char* t = text; t != nullptr && *t != '\0'; ++t) {
+        const char* pattern = encode(*t);
+        if (pattern == nullptr) {
+            if (*t == ' ') wordGap = true;
+            continue;
+        }
+        if (sentAny) units += wordGap ? kWordGapUnits : kCharGapUnits;
+        for (const char* p = pattern; *p != '\0'; ++p) {
+            if (p != pattern) units += kElementGapUnits;
+            units += (*p == '-') ? kDashUnits : kDotUnits;
+        }
+        sentAny = true;
+        wordGap = false;
+    }
+    return units;
+}
+
 char decode(const char* pattern) {
     if (pattern == nullptr || pattern[0] == '\0') return '\0';
     for (const Entry& e : kTable) {
