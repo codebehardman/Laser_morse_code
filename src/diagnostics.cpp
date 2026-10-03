@@ -156,6 +156,107 @@ void sendPulses(Device& device, uint32_t count, uint32_t widthMs) {
     console::println("[link] Sent.");
 }
 
+bool measureEdges(Device& device, uint32_t timeoutMs) {
+    constexpr uint32_t kQuietEndUs = 300000;  // stop after this long without a change
+    constexpr uint32_t kSentWidthUs = 1000;   // "/test tx 200 1" sends 1 ms on / 1 ms off
+
+    console::printf("[edge] Waiting up to %lu s for pulses - now run '/test tx 200 1' on the "
+                    "other unit.\n",
+                    static_cast<unsigned long>(timeoutMs / 1000));
+
+    const uint32_t startMs = millis();
+    while (!device.sensor.readRaw()) {
+        if (millis() - startMs >= timeoutMs) {
+            console::println("[edge] FAIL: no light seen.");
+            return false;
+        }
+    }
+
+    // Time every light/dark period with micros(). The first period is
+    // partial, so it is skipped.
+    bool light = true;
+    bool first = true;
+    uint32_t lastEdgeUs = micros();
+    uint32_t samples = 0;
+    uint32_t lightCount = 0, darkCount = 0;
+    uint64_t lightSum = 0, darkSum = 0;
+    uint32_t lightMin = UINT32_MAX, lightMax = 0, darkMin = UINT32_MAX, darkMax = 0;
+    const uint32_t sampleStartUs = lastEdgeUs;
+
+    while (micros() - lastEdgeUs < kQuietEndUs) {
+        const bool now = device.sensor.readRaw();
+        ++samples;
+        if (now == light) continue;
+        const uint32_t t = micros();
+        const uint32_t duration = t - lastEdgeUs;
+        if (!first) {
+            if (light) {
+                ++lightCount;
+                lightSum += duration;
+                if (duration < lightMin) lightMin = duration;
+                if (duration > lightMax) lightMax = duration;
+            } else {
+                ++darkCount;
+                darkSum += duration;
+                if (duration < darkMin) darkMin = duration;
+                if (duration > darkMax) darkMax = duration;
+            }
+        }
+        first = false;
+        light = now;
+        lastEdgeUs = t;
+    }
+    const uint32_t elapsedUs = lastEdgeUs - sampleStartUs;
+    const uint32_t sampleUs = samples > 0 ? elapsedUs / samples : 0;
+
+    if (lightCount < 10 || darkCount < 10) {
+        console::printf("[edge] FAIL: only %lu light / %lu dark periods measured. The light may be "
+                        "stuck on (threshold too high?) or the pulses merged together.\n",
+                        static_cast<unsigned long>(lightCount), static_cast<unsigned long>(darkCount));
+        console::printf("[edge] Current level %u, threshold %u.\n", device.sensor.readLevel(),
+                        device.sensor.threshold());
+        return false;
+    }
+
+    const uint32_t lightAvg = static_cast<uint32_t>(lightSum / lightCount);
+    const uint32_t darkAvg = static_cast<uint32_t>(darkSum / darkCount);
+    console::printf("[edge] %lu pulses. Sent: %lu us light / %lu us dark.\n",
+                    static_cast<unsigned long>(lightCount), static_cast<unsigned long>(kSentWidthUs),
+                    static_cast<unsigned long>(kSentWidthUs));
+    console::printf("[edge] Received light: avg %lu us (min %lu, max %lu)\n",
+                    static_cast<unsigned long>(lightAvg), static_cast<unsigned long>(lightMin),
+                    static_cast<unsigned long>(lightMax));
+    console::printf("[edge] Received dark : avg %lu us (min %lu, max %lu)\n",
+                    static_cast<unsigned long>(darkAvg), static_cast<unsigned long>(darkMin),
+                    static_cast<unsigned long>(darkMax));
+    console::printf("[edge] One sensor reading takes ~%lu us.\n", static_cast<unsigned long>(sampleUs));
+
+    // Light periods come out longer than sent by the time the receiver needs
+    // to recover; a bit must be several times longer than that.
+    const uint32_t stretchUs = lightAvg > darkAvg ? (lightAvg - darkAvg) / 2 : 0;
+    const uint32_t jitterUs = (lightMax - lightMin) / 2;
+    const uint32_t slowUs = stretchUs + jitterUs + sampleUs;
+    const uint32_t bauds[] = {9600, 4800, 2400, 1200, 600, 300};
+    uint32_t recommended = 0;
+    for (uint32_t baud : bauds) {
+        if (1000000 / baud >= 4 * slowUs) {
+            recommended = baud;
+            break;
+        }
+    }
+    console::printf("[edge] Light pulses are stretched by ~%lu us (jitter +-%lu us).\n",
+                    static_cast<unsigned long>(stretchUs), static_cast<unsigned long>(jitterUs));
+    if (recommended == 0) {
+        console::println("[edge] The receiver is too slow even for 300 baud: use a smaller "
+                         "pull-up resistor (and check the threshold).");
+        return false;
+    }
+    console::printf("[edge] Highest safe link speed: %lu baud (use /baud %lu in serial mode on "
+                    "both units).\n",
+                    static_cast<unsigned long>(recommended), static_cast<unsigned long>(recommended));
+    return true;
+}
+
 bool countPulses(Device& device, uint32_t expected, uint32_t timeoutMs) {
     constexpr uint32_t kQuietEndMs = 500;  // stop after this long without pulses
 

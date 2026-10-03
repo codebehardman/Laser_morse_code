@@ -10,7 +10,7 @@ constexpr UBaseType_t kLinkTaskPriority = 5;
 
 struct TaskArgs {
     LaserUart* link;
-    int64_t periodNs;
+    volatile uint32_t periodNs;  // can be changed by setBaud() while running
 };
 TaskArgs taskArgs;
 
@@ -35,10 +35,16 @@ void LaserUart::begin(uint32_t baud) {
     pinMode(laserPin_, OUTPUT);
     gpio_set_level(static_cast<gpio_num_t>(laserPin_), 0);
 
-    taskArgs = {this, 1000000000LL / (static_cast<int64_t>(baud) * optical::kOversample)};
+    taskArgs.link = this;
+    setBaud(baud);
     disableCore0WDT();
     xTaskCreatePinnedToCore(linkTask, "laser_link", 4096, &taskArgs, kLinkTaskPriority, nullptr,
                             kLinkCore);
+}
+
+void LaserUart::setBaud(uint32_t baud) {
+    baud_ = baud;
+    taskArgs.periodNs = 1000000000UL / (baud * optical::kOversample);
 }
 
 void LaserUart::tick() {

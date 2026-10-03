@@ -49,8 +49,11 @@ is sent over the laser and appears in the other unit's terminal as
   100 kΩ pull-up is too slow for that (see Hardware notes). A dedicated task
   on the ESP32's second core sends and receives the bits, sampling the
   sensor 8 times per bit with a 3-sample majority vote.
-- Backspace works while typing. Of the commands, only `/level` and
-  `/threshold` work in this mode; the rest need Morse mode.
+- Backspace works while typing. Commands in this mode:
+  - `/baud <n>` changes the link speed on the fly (set the **same** on both
+    units).
+  - `/rxdebug on|off` shows every received byte in hex, plus error counts.
+  - `/level` and `/threshold` work here too. Everything else needs Morse mode.
 - Holding the key keeps the laser on for aiming. The other unit sees this as
   a line break and prints nothing.
 - The LED flashes when data arrives.
@@ -154,7 +157,9 @@ Flash both units the same way.
 ## Using the serial console
 
 Open the board's USB serial port in any terminal at **115200 baud**. Opening
-the port restarts the board, so you'll see the mode prompt. In Morse mode,
+the port restarts the board, so you'll see the mode prompt. The first line
+shows the firmware build time (`firmware build 202610022245` =
+2026-10-02 22:45), so you can check both units run the same version. In Morse mode,
 each line you type is sent as Morse code when you press Enter. Received text
 shows up as `RX< ...`.
 
@@ -178,6 +183,7 @@ shows up as `RX< ...`.
 | `/test sensor` | Prints every light/dark change for 10 s with timings and ADC levels. Use it to check aim and ambient-light interference |
 | `/test button` | Prints key presses for 10 s |
 | `/test all`    | All of the above |
+| `/test edge` then `/test tx 200 1` | **Receiver speed.** Run `/test edge` on the receiving unit, then `/test tx 200 1` on the other (200 pulses of 1 ms). Reports in microseconds how much the phototransistor stretches the pulses, and the highest link speed it can handle |
 | `/test rx` then `/test tx` | **Link test across two units.** Run `/test rx` on the receiving unit first, then `/test tx` on the sending unit. The sender transmits 100 pulses of 20 ms. The receiver reports how many arrived and their widths, and gives PASS if the error rate is ≤ 10% (the design requirement) |
 
 The link test is the quick way to run the distance (Test 2, 30 m) and

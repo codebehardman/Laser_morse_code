@@ -24,6 +24,10 @@ public:
     // Takes over the laser pin and starts the sampling task.
     void begin(uint32_t baud);
 
+    // Change the link speed while running (both units must match).
+    void setBaud(uint32_t baud);
+    uint32_t baud() const { return baud_; }
+
     bool write(uint8_t byte) { return tx_.write(byte); }
     size_t txSpace() const { return tx_.space(); }
     bool read(uint8_t& byte) { return rx_.read(byte); }
@@ -40,6 +44,7 @@ public:
 private:
     uint32_t laserPin_;
     const PhotoSensor& sensor_;
+    uint32_t baud_ = 0;
 
     optical::SoftUartTx tx_;
     optical::SoftUartRx rx_;

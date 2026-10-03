@@ -22,6 +22,10 @@
 #include "modes/serial_mode.hpp"
 #include "morse_code.hpp"
 
+#ifndef LMC_BUILD_ID
+#define LMC_BUILD_ID 0  // set by platformio.ini to the build time, YYYYMMDDhhmm
+#endif
+
 namespace {
 
 Laser laser(LMC_PIN_LASER);
@@ -48,7 +52,8 @@ void setup() {
     console::begin();
 
     console::println();
-    console::println("Laser Morse transceiver");
+    console::printf("Laser Morse transceiver (firmware build %llu)\n",
+                    static_cast<unsigned long long>(LMC_BUILD_ID));
     mode = selectMode(device);
 
     if (mode == Mode::SerialTerminal) {

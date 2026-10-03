@@ -1,5 +1,8 @@
 #include "serial_mode.hpp"
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "../commands.hpp"
 #include "../console.hpp"
 #include "board_config.hpp"
@@ -25,6 +28,37 @@ size_t inputLength = 0;
 bool previousWasCr = false;
 
 optical::LineDeframer deframer;
+bool rxDebug = false;  // print every received byte (/rxdebug on)
+
+void printRxStats(Device& device) {
+    const optical::SoftUartRx& rx = device.link.receiver();
+    console::printf("[rx: %lu bytes ok, %lu parity errors, %lu framing errors]\r\n",
+                    static_cast<unsigned long>(rx.bytesReceived()),
+                    static_cast<unsigned long>(rx.parityErrors()),
+                    static_cast<unsigned long>(rx.framingErrors()));
+}
+
+// Commands handled by this mode itself. Returns false if `line` isn't one.
+bool handleModeCommand(Device& device, const char* line) {
+    if (strncmp(line, "/baud", 5) == 0) {
+        const long baud = strtol(line + 5, nullptr, 10);
+        if (baud >= 100 && baud <= 9600) {
+            device.link.setBaud(static_cast<uint32_t>(baud));
+            console::printf("Link speed set to %ld baud. Set the SAME on the other unit.\r\n", baud);
+        } else {
+            console::printf("Link speed is %lu baud. Usage: /baud <100-9600> (both units must match)\r\n",
+                            static_cast<unsigned long>(device.link.baud()));
+        }
+        return true;
+    }
+    if (strncmp(line, "/rxdebug", 8) == 0) {
+        rxDebug = strstr(line, "off") == nullptr;
+        console::printf("Receive debug %s.\r\n", rxDebug ? "on: every received byte is shown in hex" : "off");
+        printRxStats(device);
+        return true;
+    }
+    return false;
+}
 
 // Print a message on its own line without losing what the user is typing.
 void printAboveInput(const char* prefix, const char* text) {
@@ -61,9 +95,9 @@ void handleTyped(Device& device, char c) {
             // Commands are never sent as text. Only the sensor ones work here.
             input[inputLength] = '\0';
             console::print("\r\n");
-            if (!commands::handleSensorLine(device, input)) {
-                console::println("Only /level and /threshold work in this mode. For other commands: "
-                                 "press EN (reset) and tap the key for Morse mode.");
+            if (!handleModeCommand(device, input) && !commands::handleSensorLine(device, input)) {
+                console::println("In this mode only /baud, /rxdebug, /level and /threshold work. For "
+                                 "other commands: press EN (reset) and tap the key for Morse mode.");
             }
             inputLength = 0;
             return;
@@ -80,8 +114,14 @@ void handleTyped(Device& device, char c) {
     }
 }
 
-void handleReceived(uint8_t byte) {
-    switch (deframer.push(byte)) {
+void handleReceived(Device& device, uint8_t byte) {
+    if (rxDebug) {
+        const char shown = (byte >= 0x20 && byte < 0x7F) ? static_cast<char>(byte) : '.';
+        console::printf("<%02X %c>", byte, shown);
+    }
+    const optical::LineDeframer::Result result = deframer.push(byte);
+    if (rxDebug && result != optical::LineDeframer::Result::None) console::print("\r\n");
+    switch (result) {
         case optical::LineDeframer::Result::Line:
             printAboveInput("RX< ", deframer.line());
             break;
@@ -91,6 +131,7 @@ void handleReceived(uint8_t byte) {
         case optical::LineDeframer::Result::None:
             break;
     }
+    if (rxDebug && result != optical::LineDeframer::Result::None) printRxStats(device);
 }
 
 }  // namespace
@@ -101,6 +142,7 @@ void begin(Device& device) {
                     static_cast<unsigned long>(config::kLinkBaud));
     console::println("Type a line and press Enter to send it to the other unit.");
     console::println("Hold the key to aim the laser. Press reset to change mode.");
+    console::println("Commands here: /baud <n>, /rxdebug on|off, /level, /threshold.");
     console::println();
 }
 
@@ -116,7 +158,7 @@ void update(Device& device) {
     // Laser -> deframer -> PC (only complete, verified lines).
     uint8_t byte;
     while (device.link.read(byte)) {
-        handleReceived(byte);
+        handleReceived(device, byte);
         lastRxByteMs = now;
         device.led.set(true);
         ledOffAtMs = now + kActivityLedMs;

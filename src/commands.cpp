@@ -128,7 +128,10 @@ void runTest(Device& device, size_t argc, char* argv[]) {
     } else if (strcmp(which, "button") == 0) {
         diagnostics::testButton(device);
     } else if (strcmp(which, "tx") == 0) {
-        diagnostics::sendPulses(device, parseNumber(argc > 2 ? argv[2] : nullptr, 100));
+        diagnostics::sendPulses(device, parseNumber(argc > 2 ? argv[2] : nullptr, 100),
+                                parseNumber(argc > 3 ? argv[3] : nullptr, 20));
+    } else if (strcmp(which, "edge") == 0) {
+        diagnostics::measureEdges(device);
     } else if (strcmp(which, "rx") == 0) {
         diagnostics::countPulses(device, parseNumber(argc > 2 ? argv[2] : nullptr, 100));
     } else if (strcmp(which, "all") == 0) {
@@ -136,7 +139,7 @@ void runTest(Device& device, size_t argc, char* argv[]) {
         diagnostics::testButton(device);
         diagnostics::testSensor(device);
     } else {
-        console::println("Usage: /test laser|sensor|button|all|tx [n]|rx [n]");
+        console::println("Usage: /test laser|sensor|button|all|tx [n] [ms]|rx [n]|edge");
         return;
     }
     // Anything the decoder picked up during a test is noise for the chat.
@@ -163,7 +166,8 @@ void printHelp() {
     console::println("  /test button        report key presses for 10 s");
     console::println("  /test all           laser, button and sensor tests");
     console::println("  /test rx [n]        link test: count pulses from the other unit");
-    console::println("  /test tx [n]        link test: send n pulses (run rx on the other unit first)");
+    console::println("  /test tx [n] [ms]   link test: send n pulses of ms each (default 100 x 20 ms)");
+    console::println("  /test edge          receiver speed: run this, then '/test tx 200 1' on the other unit");
 }
 
 void applyWpm(Device& device, uint32_t wpm) {

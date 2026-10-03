@@ -29,6 +29,14 @@ bool testButton(Device& device, uint32_t durationMs = 10000);
 //   sending unit:   sendPulses()
 // The receiver reports how many of the pulses arrived and their widths.
 void sendPulses(Device& device, uint32_t count = 100, uint32_t widthMs = 20);
+
+// Receiver speed test, run on two units at once:
+//   receiving unit: measureEdges()  (start this first)
+//   sending unit:   sendPulses(count, 1)  ("/test tx 200 1")
+// Measures in microseconds how long the received light and dark periods
+// last. A slow phototransistor stretches the light pulses; the result
+// tells which link speed the receiver can handle.
+bool measureEdges(Device& device, uint32_t timeoutMs = 20000);
 bool countPulses(Device& device, uint32_t expected = 100, uint32_t timeoutMs = 20000);
 
 }  // namespace diagnostics
