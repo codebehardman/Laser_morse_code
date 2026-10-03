@@ -2,37 +2,84 @@
 
 #include "../console.hpp"
 #include "board_config.hpp"
+#include "line_frame.hpp"
 
 namespace serial_mode {
 namespace {
 
 constexpr uint32_t kActivityLedMs = 30;
 
+// A frame whose bytes stop arriving for this long is reported as corrupted
+// (its end marker was lost). A full 120-character frame takes ~140 ms.
+constexpr uint32_t kFrameTimeoutMs = 500;
+
+constexpr const char* kCorruptedNotice = "[message corrupted - ask to resend]";
+
 uint32_t ledOffAtMs = 0;
+uint32_t lastRxByteMs = 0;
 
-// Terminals disagree on line endings (CR, LF or CRLF). The bytes on the link
-// are left untouched; only what is printed locally is normalised to CRLF so
-// every line shows up on its own line.
-class TerminalWriter {
-public:
-    void write(char c) {
-        if (c == '\n' && previous_ == '\r') {
-            // Second half of a CRLF already printed.
-        } else if (c == '\r' || c == '\n') {
-            console::write('\r');
-            console::write('\n');
-        } else {
-            console::write(c);
-        }
-        previous_ = c;
+// The line being typed; sent when Enter is pressed.
+char input[optical::kMaxLineLength + 1];
+size_t inputLength = 0;
+bool previousWasCr = false;
+
+optical::LineDeframer deframer;
+
+// Print a message on its own line without losing what the user is typing.
+void printAboveInput(const char* prefix, const char* text) {
+    if (inputLength > 0) console::print("\r\n");
+    console::print(prefix);
+    console::print(text);
+    console::print("\r\n");
+    for (size_t i = 0; i < inputLength; ++i) console::write(input[i]);
+}
+
+void sendInputLine(Device& device) {
+    uint8_t frame[optical::kMaxFrameLength];
+    const size_t frameLength = optical::encodeLine(input, inputLength, frame);
+    console::print("\r\n");
+    if (device.link.txSpace() < frameLength) {
+        console::println("(link busy - line not sent, try again)");
+    } else {
+        for (size_t i = 0; i < frameLength; ++i) device.link.write(frame[i]);
     }
+    inputLength = 0;
+}
 
-private:
-    char previous_ = '\0';
-};
+void handleTyped(Device& device, char c) {
+    const bool isCr = c == '\r';
+    const bool isLf = c == '\n';
+    if (isLf && previousWasCr) {  // second half of CRLF
+        previousWasCr = false;
+        return;
+    }
+    previousWasCr = isCr;
 
-TerminalWriter echoWriter;
-TerminalWriter receiveWriter;
+    if (isCr || isLf) {
+        sendInputLine(device);
+    } else if (c == '\b' || c == 0x7F) {
+        if (inputLength > 0) {
+            --inputLength;
+            if (config::kSerialLocalEcho) console::print("\b \b");
+        }
+    } else if (optical::isFrameable(c) && inputLength < optical::kMaxLineLength) {
+        input[inputLength++] = c;
+        if (config::kSerialLocalEcho) console::write(c);
+    }
+}
+
+void handleReceived(uint8_t byte) {
+    switch (deframer.push(byte)) {
+        case optical::LineDeframer::Result::Line:
+            printAboveInput("RX< ", deframer.line());
+            break;
+        case optical::LineDeframer::Result::Corrupted:
+            printAboveInput("", kCorruptedNotice);
+            break;
+        case optical::LineDeframer::Result::None:
+            break;
+    }
+}
 
 }  // namespace
 
@@ -40,7 +87,7 @@ void begin(Device& device) {
     device.link.begin(config::kLinkBaud);
     console::printf("Serial terminal mode: %lu baud 8E1 over the laser.\r\n",
                     static_cast<unsigned long>(config::kLinkBaud));
-    console::println("Everything typed here appears on the other unit's terminal.");
+    console::println("Type a line and press Enter to send it to the other unit.");
     console::println("Hold the key to aim the laser. Press reset to change mode.");
     console::println();
 }
@@ -50,20 +97,20 @@ void update(Device& device) {
     device.button.update(now);
     device.link.setForceOn(device.button.pressed());
 
-    // PC -> laser. Stop reading while the transmit queue is full; the USB
-    // side then buffers until the 9600-baud link catches up.
+    // PC -> line editor -> laser (whole lines, on Enter).
     char c;
-    while (device.link.txSpace() > 0 && console::readByte(c)) {
-        device.link.write(static_cast<uint8_t>(c));
-        if (config::kSerialLocalEcho) echoWriter.write(c);
-    }
+    while (console::readByte(c)) handleTyped(device, c);
 
-    // Laser -> PC.
+    // Laser -> deframer -> PC (only complete, verified lines).
     uint8_t byte;
     while (device.link.read(byte)) {
-        receiveWriter.write(static_cast<char>(byte));
+        handleReceived(byte);
+        lastRxByteMs = now;
         device.led.set(true);
         ledOffAtMs = now + kActivityLedMs;
+    }
+    if (deframer.inFrame() && now - lastRxByteMs >= kFrameTimeoutMs && deframer.abandon()) {
+        printAboveInput("", kCorruptedNotice);
     }
     if (device.led.isOn() && static_cast<int32_t>(now - ledOffAtMs) >= 0) device.led.set(false);
 }
