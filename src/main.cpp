@@ -1,4 +1,4 @@
-// Laser Morse code transceiver firmware (ESP32 or STM32F103C8T6).
+// Laser Morse code transceiver firmware (ESP32-WROOM-32 DevKit).
 //
 // Both units run this same firmware; each one transmits and receives.
 // After power-up the first key press selects the mode:
@@ -25,8 +25,8 @@
 namespace {
 
 Laser laser(LMC_PIN_LASER);
-LaserUart link(LMC_PIN_LASER, LMC_PIN_SENSOR);
-PhotoSensor sensor(LMC_PIN_SENSOR, config::kSensorDebounceMs);
+PhotoSensor sensor(LMC_PIN_SENSOR, config::kSensorDebounceMs, config::kSensorThreshold);
+LaserUart link(LMC_PIN_LASER, sensor);
 Button button(LMC_PIN_BUTTON, config::kButtonDebounceMs);
 StatusLed led(LMC_PIN_STATUS_LED, LMC_STATUS_LED_ACTIVE_LOW);
 

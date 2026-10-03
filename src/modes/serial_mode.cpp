@@ -1,5 +1,6 @@
 #include "serial_mode.hpp"
 
+#include "../commands.hpp"
 #include "../console.hpp"
 #include "board_config.hpp"
 #include "line_frame.hpp"
@@ -57,9 +58,13 @@ void handleTyped(Device& device, char c) {
 
     if (isCr || isLf) {
         if (inputLength > 0 && input[0] == '/') {
-            // Commands only exist in Morse mode; don't send them as text.
+            // Commands are never sent as text. Only the sensor ones work here.
+            input[inputLength] = '\0';
             console::print("\r\n");
-            console::println("Commands like /test only work in Morse mode: press EN (reset) and tap the key.");
+            if (!commands::handleSensorLine(device, input)) {
+                console::println("Only /level and /threshold work in this mode. For other commands: "
+                                 "press EN (reset) and tap the key for Morse mode.");
+            }
             inputLength = 0;
             return;
         }

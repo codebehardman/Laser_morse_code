@@ -2,24 +2,31 @@
 
 #include <Arduino.h>
 
-// Digital input that only changes state after the raw level has been stable
-// for the debounce time. Active-low inputs report true when pulled low.
+// Input that only changes state after the raw reading has been stable for
+// the debounce time. Subclasses can override readRaw() to change how the
+// pin is read (e.g. analog with a threshold).
 class DebouncedInput {
 public:
     DebouncedInput(uint32_t pin, bool activeLow, uint32_t debounceMs, bool usePullup)
         : pin_(pin), activeLow_(activeLow), debounceMs_(debounceMs), usePullup_(usePullup) {}
+    virtual ~DebouncedInput() = default;
 
     void begin();
 
-    // Sample the pin. Returns true if the debounced state changed.
+    // Sample the input. Returns true if the debounced state changed.
     bool update(uint32_t nowMs);
 
     bool active() const { return state_; }
-    bool readRaw() const;
+
+    // Undebounced reading: true = active.
+    virtual bool readRaw() const;
 
     // Number of inactive -> active transitions since the last reset.
     uint32_t activations() const { return activations_; }
     void resetActivations() { activations_ = 0; }
+
+protected:
+    uint32_t pin() const { return pin_; }
 
 private:
     uint32_t pin_;

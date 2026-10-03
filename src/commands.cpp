@@ -54,11 +54,60 @@ void printStatus(Device& device) {
                     static_cast<unsigned long>(device.decoder.unitMs()),
                     static_cast<unsigned long>(1200 / device.decoder.unitMs()));
     console::printf("Aim mode   : %s\n", device.settings.aim ? "on" : "off");
-    console::printf("Receiver   : %s\n", device.sensor.lightDetected() ? "LIGHT" : "dark");
+    console::printf("Receiver   : %s (level %u, threshold %u)\n",
+                    device.sensor.lightDetected() ? "LIGHT" : "dark", device.sensor.readLevel(),
+                    device.sensor.threshold());
     console::printf("TX queue   : %s\n", device.transmitter.busy() ? "sending" : "idle");
     console::printf("RX symbols : %lu marks, %lu unknown patterns\n",
                     static_cast<unsigned long>(device.decoder.marksSeen()),
                     static_cast<unsigned long>(device.decoder.unknownPatterns()));
+}
+
+// Split "/cmd args..." into argv (pointing into `buffer`). Returns argc.
+size_t parseCommand(const char* line, char* buffer, size_t bufferSize, char* argv[]) {
+    strncpy(buffer, line + 1, bufferSize - 1);
+    buffer[bufferSize - 1] = '\0';
+    return tokenize(buffer, argv, kMaxArgs);
+}
+
+void printThreshold(Device& device) {
+    console::printf("Threshold %u (level below it = laser). Current level %u. "
+                    "Presets: dark room %u, bright room %u.\n",
+                    device.sensor.threshold(), device.sensor.readLevel(),
+                    config::kThresholdDarkRoom, config::kThresholdBrightRoom);
+}
+
+// /level and /threshold, available in both modes. Returns false if `cmd`
+// is not one of them.
+bool handleSensorCommand(Device& device, size_t argc, char* argv[]) {
+    const char* cmd = argv[0];
+    if (strcmp(cmd, "level") == 0) {
+        diagnostics::showLevel(device);
+        return true;
+    }
+    if (strcmp(cmd, "threshold") != 0) return false;
+
+    const char* arg = argc > 1 ? argv[1] : nullptr;
+    if (arg == nullptr) {
+        printThreshold(device);
+    } else if (strcmp(arg, "dark") == 0) {
+        device.sensor.setThreshold(config::kThresholdDarkRoom);
+        printThreshold(device);
+    } else if (strcmp(arg, "bright") == 0) {
+        device.sensor.setThreshold(config::kThresholdBrightRoom);
+        printThreshold(device);
+    } else if (strcmp(arg, "auto") == 0) {
+        diagnostics::calibrateThreshold(device);
+    } else {
+        const uint32_t value = parseNumber(arg, 0);
+        if (value == 0 || value > PhotoSensor::kMaxLevel) {
+            console::println("Usage: /threshold [1-4095 | dark | bright | auto]");
+        } else {
+            device.sensor.setThreshold(static_cast<uint16_t>(value));
+            printThreshold(device);
+        }
+    }
+    return true;
 }
 
 void printMorseTable() {
@@ -101,10 +150,14 @@ void printHelp() {
     console::println("Commands:");
     console::println("  /help               this help");
     console::println("  /status             show settings and receiver state");
-    console::println("  /wpm <n>            transmit speed in words per minute (5-30)");
+    console::println("  /wpm <n>            transmit speed in words per minute (5-40)");
     console::println("  /aim on|off         hold the laser on to align the two units");
     console::println("  /stop               abort the current transmission");
     console::println("  /table              print the Morse alphabet");
+    console::println("  /level              show the live light-sensor reading for 5 s");
+    console::println("  /threshold [n]      show/set the light threshold (0-4095, below = laser)");
+    console::println("  /threshold dark|bright   use the dark-room or bright-room preset");
+    console::println("  /threshold auto     measure the room and the other laser, set it in between");
     console::println("  /test laser         blink the laser 5 times");
     console::println("  /test sensor        report light/dark changes for 10 s");
     console::println("  /test button        report key presses for 10 s");
@@ -134,10 +187,8 @@ void handleLine(Device& device, const char* line) {
     }
 
     char buffer[128];
-    strncpy(buffer, line + 1, sizeof(buffer) - 1);
-    buffer[sizeof(buffer) - 1] = '\0';
     char* argv[kMaxArgs] = {};
-    const size_t argc = tokenize(buffer, argv, kMaxArgs);
+    const size_t argc = parseCommand(line, buffer, sizeof(buffer), argv);
     if (argc == 0) return;
     const char* cmd = argv[0];
 
@@ -161,9 +212,16 @@ void handleLine(Device& device, const char* line) {
         device.laser.set(false);
         device.led.set(false);
         runTest(device, argc, argv);
-    } else {
+    } else if (!handleSensorCommand(device, argc, argv)) {
         console::printf("Unknown command '/%s' - type /help\n", cmd);
     }
+}
+
+bool handleSensorLine(Device& device, const char* line) {
+    char buffer[128];
+    char* argv[kMaxArgs] = {};
+    const size_t argc = parseCommand(line, buffer, sizeof(buffer), argv);
+    return argc > 0 && handleSensorCommand(device, argc, argv);
 }
 
 }  // namespace commands

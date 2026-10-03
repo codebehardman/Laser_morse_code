@@ -14,6 +14,13 @@ bool testLaser(Device& device, uint32_t blinks = 5);
 // The status LED follows the receiver.
 bool testSensor(Device& device, uint32_t durationMs = 10000);
 
+// Print the live light-sensor reading every 250 ms for `durationMs`.
+void showLevel(Device& device, uint32_t durationMs = 5000);
+
+// Measure the room (other laser off), then the other unit's laser, and set
+// the threshold halfway between. Returns false if the laser wasn't seen.
+bool calibrateThreshold(Device& device);
+
 // Report button presses for `durationMs`.
 bool testButton(Device& device, uint32_t durationMs = 10000);
 

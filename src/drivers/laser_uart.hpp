@@ -2,20 +2,26 @@
 
 #include <Arduino.h>
 
+#include "photo_sensor.hpp"
 #include "soft_uart.hpp"
 
-// 8E1 serial link over the laser, bit-banged from a hardware timer interrupt
-// running at baud * optical::kOversample (76.8 kHz for 9600 baud).
+// 8E1 serial link over the laser, bit-banged at baud * optical::kOversample
+// ticks per second (9.6 kHz for 1200 baud).
 //
-// Laser on = space (0), laser off = mark (1, idle). The phototransistor pulls
-// its pin low when lit, so the receive pin level is the UART level directly.
+// The ticks run in a dedicated task on CPU core 0 rather than in a timer
+// interrupt, because the receiver is sampled with the ADC (to apply the
+// light threshold) and the ESP32 ADC driver can't be used from an interrupt.
+// The Arduino loop keeps running on core 1.
 //
-// Only one instance can be active (it owns the timer interrupt).
+// Laser on = space (0), laser off = mark (1, idle). Light at the sensor
+// (level below the threshold) = space.
+//
+// Only one instance can be active.
 class LaserUart {
 public:
-    LaserUart(uint32_t laserPin, uint32_t sensorPin) : laserPin_(laserPin), sensorPin_(sensorPin) {}
+    LaserUart(uint32_t laserPin, const PhotoSensor& sensor) : laserPin_(laserPin), sensor_(sensor) {}
 
-    // Takes over the laser and sensor pins and starts the tick interrupt.
+    // Takes over the laser pin and starts the sampling task.
     void begin(uint32_t baud);
 
     bool write(uint8_t byte) { return tx_.write(byte); }
@@ -28,12 +34,12 @@ public:
 
     const optical::SoftUartRx& receiver() const { return rx_; }
 
-    // One oversampling tick; called from the timer interrupt.
+    // One oversampling tick; called by the sampling task.
     void tick();
 
 private:
     uint32_t laserPin_;
-    uint32_t sensorPin_;
+    const PhotoSensor& sensor_;
 
     optical::SoftUartTx tx_;
     optical::SoftUartRx rx_;

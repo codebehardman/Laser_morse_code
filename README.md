@@ -4,16 +4,12 @@ Firmware for the ECE 198 laser transceiver: two identical units that talk
 to each other in Morse code over a visible laser beam, without any
 radio emissions (so they can be used inside the National Radio Quiet Zone).
 
-Both units run the **same firmware**, and each one can both send and receive.
-The firmware supports two boards:
+Both units run the **same firmware** on an **ESP32-WROOM-32 DevKit**, and
+each one can both send and receive. The ESP32's Wi-Fi and Bluetooth are never
+switched on by this firmware, so the board does not transmit radio.
 
-| Board | PlatformIO environment | Flashing |
-|-------|------------------------|----------|
-| **ESP32-WROOM-32 DevKit** (current) | `esp32` (default) | over its USB port, no extra hardware |
-| STM32F103C8T6 "Blue Pill" | `bluepill` / `bluepill_uart` | needs an ST-LINK V2 or USB-serial adapter |
-
-The ESP32's Wi-Fi and Bluetooth are never switched on by this firmware, so
-the board does not transmit radio.
+(Earlier versions targeted the NUCLEO-F401RE and STM32F103C8T6; see the git
+history, e.g. commit `f61c9a8`, if you need them.)
 
 ## Modes
 
@@ -25,8 +21,8 @@ second while it waits. The **first key press** chooses the mode:
 | Tap (< 1 s) | **Morse code** | one long flash |
 | Hold ≥ 1 s  | **Serial terminal** | two long flashes (they start while you're still holding, so let go then) |
 
-The serial monitor shows the chosen mode (`===== Mode: ... =====`). On the
-ESP32, press **EN** to reset and choose again.
+The serial monitor shows the chosen mode (`===== Mode: ... =====`). Press
+**EN** to reset and choose again.
 
 The mode stays until you press reset or cut the power. Set both units to the
 same mode.
@@ -50,10 +46,11 @@ is sent over the laser and appears in the other unit's terminal as
   `[message corrupted - ask to resend]` otherwise.
 - The laser link runs at **1200 baud, 8 data bits, even parity, 1 stop bit**.
   The design document specifies 9600 baud, but the phototransistor with its
-  100 kΩ pull-up is too slow for that (see Hardware notes). A timer
-  interrupt sends and receives the bits, sampling 8 times per bit with a
-  3-sample majority vote.
-- Backspace works while typing. Commands (`/...`) only work in Morse mode.
+  100 kΩ pull-up is too slow for that (see Hardware notes). A dedicated task
+  on the ESP32's second core sends and receives the bits, sampling the
+  sensor 8 times per bit with a 3-sample majority vote.
+- Backspace works while typing. Of the commands, only `/level` and
+  `/threshold` work in this mode; the rest need Morse mode.
 - Holding the key keeps the laser on for aiming. The other unit sees this as
   a line break and prints nothing.
 - The LED flashes when data arrives.
@@ -74,43 +71,69 @@ src/
   console.{hpp,cpp}       serial console over the board's USB port
   device.hpp              references to all modules, shared by commands/tests
   drivers/                laser, phototransistor, button, status LED drivers,
-                          laser_uart: timer-interrupt serial link over the laser
+                          laser_uart: serial link over the laser (core-0 task)
 lib/morse/src/            hardware-independent Morse code library
   morse_code.{hpp,cpp}        ITU alphabet: A-Z, 0-9, punctuation
   morse_transmitter.{hpp,cpp} text -> laser on/off timing (non-blocking)
   morse_decoder.{hpp,cpp}     light timing -> text, adapts to the sender's speed
-lib/optical_uart/src/     hardware-independent 8E1 software UART framing
+lib/optical_uart/src/     hardware-independent 8E1 software UART + line framing
 test/                     unit tests for both libraries, run on your PC
 ```
 
 ## Wiring
 
-| Part | ESP32 DevKit | STM32F103C8T6 | Notes |
-|------|--------------|---------------|-------|
-| Laser (via NPN transistor Q1) | **GPIO 25** | PA1 | high = laser on |
-| Phototransistor + pull-up resistor | **GPIO 26** | PA0 | low = light detected. **Pull-up to 3.3 V, never 5 V** |
-| Key button to GND | **GPIO 27** | PA2 | internal pull-up |
-| Status LED | GPIO 2 (on board) | PC13 (on board) | |
-| Laser supply (R1 + laser diode) | **VIN / 5V** | 5V | USB 5 V while plugged in |
-| Pull-up supply | **3V3** | 3.3 | |
-| USB | on-board connector | on-board connector | power + serial console |
+| Part | ESP32 pin | Notes |
+|------|-----------|-------|
+| Laser (via NPN transistor Q1) | **GPIO 25** | high = laser on |
+| Phototransistor + 100 kΩ pull-up | **GPIO 26** | read with the ADC. **Pull-up to 3V3, never 5 V** |
+| Key button to GND | **GPIO 27** | internal pull-up |
+| Status LED | GPIO 2 (on board) | |
+| Laser supply (R1 + laser diode) | **VIN / 5V** | USB 5 V while plugged in |
+| Pull-up supply | **3V3** | |
+| USB | on-board connector | power, serial console and flashing |
 
 ```
 ESP32 DevKit
   VIN  ──[100Ω R1]──▶|── laser diode ── Q1 collector
-  GPIO25 ─────────────────────────────── Q1 base   (Q1 emitter → GND)
-  3V3  ──[47kΩ]──┬── GPIO26
-                 └── phototransistor collector   (emitter → GND)
+  GPIO25 ──[~1kΩ]──────────────────────── Q1 base   (Q1 emitter → GND)
+  3V3  ──[100kΩ]──┬── GPIO26
+                  └── phototransistor collector   (emitter → GND)
   GPIO27 ──[button]── GND
 ```
 
-All of these boards' pins are 3.3 V only. On the ESP32 avoid GPIO 0, 2, 12
-and 15 (they affect booting) and GPIO 34–39 (input-only) for external parts.
-To use different pins, add `-D LMC_PIN_...=` flags in `platformio.ini`.
+ESP32 pins are 3.3 V only. Avoid GPIO 0, 2, 12 and 15 (they affect booting)
+for external parts. To use different pins, add `-D LMC_PIN_...=` flags in
+`platformio.ini`.
+
+## Light threshold (ambient light)
+
+The phototransistor is read with the ADC: **0 = very bright, 4095 = dark**. A
+reading below the **threshold** counts as "laser detected". Ambient light
+also lowers the reading, so a bright room needs a lower threshold than a
+dark one.
+
+**In the code**, set the room type in `include/board_config.hpp`:
+
+```cpp
+constexpr Lighting kLighting = Lighting::Dark;   // or Lighting::Bright
+constexpr uint16_t kThresholdDarkRoom = 2000;
+constexpr uint16_t kThresholdBrightRoom = 700;
+```
+
+**At runtime** (both modes, lost on reset):
+
+| Command | Does |
+|---------|------|
+| `/level` | shows the live reading for 5 s, with a bar and LASER/dark |
+| `/threshold` | shows the current threshold and reading |
+| `/threshold 1500` | sets it to 1500 |
+| `/threshold dark` / `bright` | uses the preset from the config |
+| `/threshold auto` | measures the room (other laser off), then the other unit's laser (hold its button), and sets the threshold halfway between |
+
+Once you've found a value that works, put it in `board_config.hpp` so it
+survives a reset.
 
 ## Flashing
-
-### ESP32
 
 Plug the ESP32 into the computer and run:
 
@@ -121,35 +144,19 @@ pio device monitor
 
 Or in VS Code: PlatformIO sidebar → **esp32** → **Upload**, then
 **Monitor**. The board shows up as `/dev/cu.usbserial-*` on macOS (`COMx` on
-Windows). If the upload stops at "Connecting...", hold the board's **BOOT**
-button until the upload starts. If it fails with "serial noise or
-corruption", lower `upload_speed` in `platformio.ini` (e.g. to 115200).
+Windows). Close any serial monitor on that port first. If the upload stops
+at "Connecting...", hold the board's **BOOT** button until the upload starts.
+If it fails with "serial noise or corruption", lower `upload_speed` in
+`platformio.ini` (e.g. to 115200).
 
 Flash both units the same way.
 
-### STM32F103C8T6
-
-This chip has no programmer built in, and its USB port can't be used for
-flashing until you've installed a bootloader. Flash it **once per board**
-using one of these.
-
-**ST-LINK V2 (recommended).** Connect SWDIO→DIO, SWCLK→CLK, GND→GND and
-3.3V→3.3 on the 4-pin header at the end of the board. Unplug the board's own
-USB, then run `pio run -e bluepill -t upload`. A Nucleo board's built-in
-ST-LINK also works: remove its two CN2 jumpers and use CN4 (pin 2 SWCLK,
-pin 3 GND, pin 4 SWDIO).
-
-**USB-serial adapter.** Connect TX→PA10, RX→PA9 and GND. Set **BOOT0 = 1**,
-press RESET, run `pio run -e bluepill_uart -t upload`, then set BOOT0 back
-to 0 and press RESET.
-
-After flashing, plug in the board's own USB and run `pio device monitor`.
-
 ## Using the serial console
 
-Open the board's USB serial port in any terminal at **115200 baud**. On the
-ESP32, opening the port restarts the board, so you'll see the mode prompt. In Morse mode, each line
-you type is sent as Morse code when you press Enter. Received text shows up as `RX< ...`.
+Open the board's USB serial port in any terminal at **115200 baud**. Opening
+the port restarts the board, so you'll see the mode prompt. In Morse mode,
+each line you type is sent as Morse code when you press Enter. Received text
+shows up as `RX< ...`.
 
 ```
 /help               list commands
@@ -158,10 +165,8 @@ you type is sent as Morse code when you press Enter. Received text shows up as `
 /aim on|off         hold the laser on to align the units
 /stop               abort the current transmission
 /table              print the Morse alphabet
+/level, /threshold  light sensor (see "Light threshold"; also in serial mode)
 ```
-
-These commands only work in Morse mode. In serial terminal mode every
-character goes over the link.
 
 ## Hardware tests
 
@@ -170,7 +175,7 @@ character goes over the link.
 | Command | What it checks |
 |---------|----------------|
 | `/test laser`  | Blinks the laser 5 times. If you reflect the beam back with a mirror, it also counts the pulses at its own sensor |
-| `/test sensor` | Prints every light/dark change for 10 s with timings. Use it to check aim and ambient-light interference |
+| `/test sensor` | Prints every light/dark change for 10 s with timings and ADC levels. Use it to check aim and ambient-light interference |
 | `/test button` | Prints key presses for 10 s |
 | `/test all`    | All of the above |
 | `/test rx` then `/test tx` | **Link test across two units.** Run `/test rx` on the receiving unit first, then `/test tx` on the sending unit. The sender transmits 100 pulses of 20 ms. The receiver reports how many arrived and their widths, and gives PASS if the error rate is ≤ 10% (the design requirement) |
@@ -190,6 +195,8 @@ pio test -e native
 - **Serial link:** frame layout, all 256 byte values, any sampling phase,
   ±3% clock mismatch, detection of a flipped bit, glitches, and a held-on
   laser.
+- **Line framing:** CRC, round trips, and that damaged or partial messages
+  are always reported, never shown wrong or dropped silently.
 
 ## Morse timing
 
@@ -205,17 +212,12 @@ patterns appear as `*`.
   the ESP32's VIN/5V pin, which carries USB 5 V while plugged in. From 3.3 V
   the laser gets only about a third of its current; if you must use 3.3 V,
   change R1 from 100 Ω to about 33 Ω (check the laser's datasheet first).
-- **USB not detected (STM32)?** Many F103C8T6 boards have the wrong USB pull-up
-  resistor (R10 = 10 kΩ instead of 1.5 kΩ). Most PCs still work. If yours
-  doesn't, replace R10 or add 1.8 kΩ between PA12 and 3.3 V.
 - **Phototransistor pull-up: sensitivity vs. speed.** A larger pull-up is
   more sensitive but slower to return high after the light goes off. With
   100 kΩ the laser is detected, but 9600 baud came through garbled; with
   10 kΩ the laser was no longer detected at all. The link therefore runs at
   1200 baud (`config::kLinkBaud`). To go faster, try 50 kΩ (2 × 100 kΩ in
   parallel) at 2400 baud, on both units.
-- **PA0 is not 5 V tolerant on the F103.** The schematic ties the
-  phototransistor's pull-up to 5 V; on this chip that pushes current into
-  PA0's protection diode. Connect the pull-up to **3.3 V** instead.
-- **Q1 base resistor.** The schematic seems to drive the laser transistor's
-  base straight from PA1. Add a resistor of about 1 kΩ.
+- **Q1 base resistor.** The design-doc schematic drives the laser
+  transistor's base straight from the microcontroller pin. Add a resistor of
+  about 1 kΩ.

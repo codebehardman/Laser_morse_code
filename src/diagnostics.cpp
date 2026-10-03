@@ -37,8 +37,9 @@ bool testLaser(Device& device, uint32_t blinks) {
 bool testSensor(Device& device, uint32_t durationMs) {
     console::printf("[sensor] Watching phototransistor for %lu s. Shine a laser on it.\n",
                     static_cast<unsigned long>(durationMs / 1000));
-    console::printf("[sensor] Current state: %s\n",
-                    device.sensor.lightDetected() ? "LIGHT" : "dark");
+    console::printf("[sensor] Current state: %s (level %u, threshold %u)\n",
+                    device.sensor.lightDetected() ? "LIGHT" : "dark", device.sensor.readLevel(),
+                    device.sensor.threshold());
 
     device.sensor.resetActivations();
     const uint32_t start = millis();
@@ -46,10 +47,10 @@ bool testSensor(Device& device, uint32_t durationMs) {
     while (millis() - start < durationMs) {
         const uint32_t now = millis();
         if (device.sensor.update(now)) {
-            console::printf("[sensor] %6lu ms: %s (previous state lasted %lu ms)\n",
+            console::printf("[sensor] %6lu ms: %s level %4u (previous state lasted %lu ms)\n",
                             static_cast<unsigned long>(now - start),
                             device.sensor.lightDetected() ? "LIGHT" : "dark ",
-                            static_cast<unsigned long>(now - lastEdge));
+                            device.sensor.readLevel(), static_cast<unsigned long>(now - lastEdge));
             lastEdge = now;
         }
         followSensor(device);
@@ -63,6 +64,66 @@ bool testSensor(Device& device, uint32_t durationMs) {
         console::println("[sensor] FAIL? Nothing seen - check aim, wiring and pull-up.");
         return false;
     }
+    return true;
+}
+
+void showLevel(Device& device, uint32_t durationMs) {
+    constexpr uint32_t kBarWidth = 32;
+    console::printf("[level] 0 = bright ... 4095 = dark. Below %u counts as laser.\n",
+                    device.sensor.threshold());
+    const uint32_t start = millis();
+    while (millis() - start < durationMs) {
+        const uint16_t level = device.sensor.readLevel();
+        char bar[kBarWidth + 1];
+        const uint32_t filled = (static_cast<uint32_t>(level) * kBarWidth) / PhotoSensor::kMaxLevel;
+        for (uint32_t i = 0; i < kBarWidth; ++i) bar[i] = i < filled ? '#' : '.';
+        bar[kBarWidth] = '\0';
+        console::printf("[level] %4u |%s| %s\n", level, bar,
+                        device.sensor.isLight(level) ? "LASER" : "dark");
+        delay(250);
+    }
+}
+
+namespace {
+
+// Lowest (brightest) level seen during `durationMs`.
+uint16_t minimumLevel(Device& device, uint32_t durationMs) {
+    uint16_t minimum = PhotoSensor::kMaxLevel;
+    const uint32_t start = millis();
+    while (millis() - start < durationMs) {
+        const uint16_t level = device.sensor.readLevel();
+        if (level < minimum) minimum = level;
+        delay(2);
+    }
+    return minimum;
+}
+
+}  // namespace
+
+bool calibrateThreshold(Device& device) {
+    constexpr uint16_t kMinDifference = 200;
+
+    console::println("[threshold] Step 1/2: measuring the room for 2 s - keep the other laser OFF.");
+    delay(500);
+    const uint16_t room = minimumLevel(device, 2000);
+    console::printf("[threshold] Room level: %u\n", room);
+
+    console::println("[threshold] Step 2/2: hold the OTHER unit's button now so its laser hits this "
+                     "sensor (measuring for 5 s)...");
+    const uint16_t laser = minimumLevel(device, 5000);
+    console::printf("[threshold] Laser level: %u\n", laser);
+
+    if (laser + kMinDifference > room) {
+        console::printf("[threshold] FAIL: the laser didn't read clearly brighter than the room. "
+                        "Threshold left at %u. Check the aim and try again.\n",
+                        device.sensor.threshold());
+        return false;
+    }
+    device.sensor.setThreshold(static_cast<uint16_t>((room + laser) / 2));
+    console::printf("[threshold] Threshold set to %u (halfway between room and laser).\n",
+                    device.sensor.threshold());
+    console::println("[threshold] This lasts until reset. To keep it, put it in "
+                     "include/board_config.hpp (kThresholdDarkRoom / kThresholdBrightRoom).");
     return true;
 }
 
