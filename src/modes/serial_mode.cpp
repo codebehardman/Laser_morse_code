@@ -109,7 +109,7 @@ void update(Device& device) {
         device.led.set(true);
         ledOffAtMs = now + kActivityLedMs;
     }
-    if (deframer.inFrame() && now - lastRxByteMs >= kFrameTimeoutMs && deframer.abandon()) {
+    if (deframer.pending() && now - lastRxByteMs >= kFrameTimeoutMs && deframer.abandon()) {
         printAboveInput("", kCorruptedNotice);
     }
     if (device.led.isOn() && static_cast<int32_t>(now - ledOffAtMs) >= 0) device.led.set(false);

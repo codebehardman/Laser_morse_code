@@ -128,9 +128,20 @@ void test_abandon_partial_frame() {
     std::vector<uint8_t> f = frame("hello");
     f.pop_back();
     feed(d, f);
-    TEST_ASSERT_TRUE(d.inFrame());
+    TEST_ASSERT_TRUE(d.pending());
     TEST_ASSERT_TRUE(d.abandon());
     TEST_ASSERT_FALSE(d.abandon());
+}
+
+void test_frame_missing_both_ends_is_not_silent() {
+    LineDeframer d;
+    std::vector<uint8_t> f = frame("hello");
+    f.erase(f.begin());  // STX lost
+    f.pop_back();        // ETX lost
+    const Received r = feed(d, f);
+    TEST_ASSERT_EQUAL(0, r.lines.size());
+    TEST_ASSERT_TRUE(d.pending());
+    TEST_ASSERT_TRUE(d.abandon());  // reported after the timeout
 }
 
 void test_long_line_is_truncated_to_limit() {
@@ -152,6 +163,7 @@ int main() {
     RUN_TEST(test_lost_end_reports_and_next_line_survives);
     RUN_TEST(test_garbage_byte_is_corrupted);
     RUN_TEST(test_abandon_partial_frame);
+    RUN_TEST(test_frame_missing_both_ends_is_not_silent);
     RUN_TEST(test_long_line_is_truncated_to_limit);
     return UNITY_END();
 }

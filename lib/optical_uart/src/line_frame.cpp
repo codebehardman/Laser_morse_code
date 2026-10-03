@@ -39,10 +39,12 @@ size_t encodeLine(const char* text, size_t length, uint8_t* out) {
 
 LineDeframer::Result LineDeframer::push(uint8_t byte) {
     if (byte == kFrameStart) {
-        // A new frame while one was open means the previous end was lost.
-        const bool lostPrevious = inFrame_;
+        // A new frame while one was open (or after stray bytes) means the
+        // previous frame lost its end (or start).
+        const bool lostPrevious = pending();
         inFrame_ = true;
         skipping_ = false;
+        strayBytes_ = false;
         length_ = 0;
         return lostPrevious ? Result::Corrupted : Result::None;
     }
@@ -51,7 +53,11 @@ LineDeframer::Result LineDeframer::push(uint8_t byte) {
         // An end without a start means the start was lost; stray text
         // bytes are the rest of that broken frame and are reported at its
         // end, unless the frame was already reported.
-        if (byte != kFrameEnd) return Result::None;
+        if (byte != kFrameEnd) {
+            if (!skipping_) strayBytes_ = true;
+            return Result::None;
+        }
+        strayBytes_ = false;
         if (skipping_) {
             skipping_ = false;
             return Result::None;
@@ -84,11 +90,12 @@ LineDeframer::Result LineDeframer::push(uint8_t byte) {
 }
 
 bool LineDeframer::abandon() {
-    const bool wasInFrame = inFrame_;
+    const bool wasPending = pending();
     inFrame_ = false;
     skipping_ = false;
+    strayBytes_ = false;
     length_ = 0;
-    return wasInFrame;
+    return wasPending;
 }
 
 }  // namespace optical

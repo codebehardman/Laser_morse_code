@@ -42,10 +42,12 @@ public:
     Result push(uint8_t byte);
 
     // Give up on a frame that stopped arriving (call after a timeout).
-    // Returns true if a partial frame was discarded.
+    // Returns true if a partial frame or stray bytes were discarded.
     bool abandon();
 
-    bool inFrame() const { return inFrame_; }
+    // True while a frame (or stray bytes of one whose start was lost) is
+    // still incomplete.
+    bool pending() const { return inFrame_ || strayBytes_; }
     const char* line() const { return buffer_; }
     size_t length() const { return length_; }
 
@@ -53,7 +55,8 @@ private:
     char buffer_[kMaxLineLength + 3] = {};  // text + 2 CRC digits + NUL
     size_t length_ = 0;
     bool inFrame_ = false;
-    bool skipping_ = false;  // rest of an already-reported broken frame
+    bool skipping_ = false;    // rest of an already-reported broken frame
+    bool strayBytes_ = false;  // bytes received outside any frame
 };
 
 }  // namespace optical
